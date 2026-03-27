@@ -20,7 +20,8 @@ foreach (var relative in new[] { Path.Combine("..", "config.json"), "config.json
 
 var urls = builder.Configuration["crmServer:urls"];
 if (string.IsNullOrWhiteSpace(urls))
-    urls = "http://localhost:5000;https://localhost:5001";
+    // Avoid 5000/5001: on Windows they are often in the excluded port range (Hyper-V, etc.) → SocketException 10013.
+    urls = "http://localhost:8104;https://localhost:8105";
 builder.WebHost.UseUrls(urls);
 
 builder.Services.AddControllers();
@@ -92,11 +93,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c =>
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "CRM API v1");
-        // Default RoutePrefix is "swagger" → https://localhost:5001/swagger
+        // Default RoutePrefix is "swagger" → https://localhost:8105/swagger
     });
 }
 
-// In Development, HTTP (e.g. http://localhost:5000) must not redirect to HTTPS or
+// In Development, HTTP (e.g. http://localhost:8104) must not redirect to HTTPS or
 // browser POST/fetch + CORS from the Vite app often breaks.
 if (!app.Environment.IsDevelopment())
 {
@@ -133,7 +134,7 @@ lifetime.ApplicationStarted.Register(() =>
         {
             var fallback = Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
                 ?? app.Configuration["urls"]
-                ?? "http://localhost:5000 (Kestrel default if not configured)";
+                ?? "http://localhost:8104 (Kestrel default if not configured)";
             Console.WriteLine($"    {fallback}");
         }
 
