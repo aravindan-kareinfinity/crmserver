@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>CRM.Server</RootNamespace>
+    <AssemblyName>CRM.Server</AssemblyName>
+    <!-- Set false to skip npm (uses existing wwwroot if present): dotnet publish -p:BuildSpaOnPublish=false -->
+    <BuildSpaOnPublish Condition="'$(BuildSpaOnPublish)' == ''">true</BuildSpaOnPublish>
+    <SpaRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..\core-crm-suite'))</SpaRoot>
+    <WwwRootDir>$(MSBuildProjectDirectory)\wwwroot</WwwRootDir>
+    <!-- VS/MSBuild often runs Exec without a shell; on Windows `npm` is npm.cmd — use cmd.exe so PATH resolves. -->
+    <_SpaNpmPrefix Condition="'$(OS)' == 'Windows_NT'">cmd.exe /d /s /c </_SpaNpmPrefix>
+    <_SpaNpmPrefix Condition="'$(_SpaNpmPrefix)' == ''" />
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.102.3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.0" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.0" />
+    <PackageReference Include="EFCore.NamingConventions" Version="8.0.3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="8.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
+    <PackageReference Include="AutoMapper.Extensions.Microsoft.DependencyInjection" Version="12.0.1" />
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+  </ItemGroup>
+
+  <Target Name="BuildSpa" BeforeTargets="ComputeFilesToPublish" Condition="'$(BuildSpaOnPublish)' == 'true'">
+    <Error Condition="!Exists('$(SpaRoot)package.json')" Text="SPA not found: $(SpaRoot)package.json" />
+    <Exec Command="$(_SpaNpmPrefix)npm ci --legacy-peer-deps" WorkingDirectory="$(SpaRoot)" ConsoleToMSBuild="true" />
+    <Exec Command="$(_SpaNpmPrefix)npm run build" WorkingDirectory="$(SpaRoot)" ConsoleToMSBuild="true" />
+    <ItemGroup>
+      <_SpaOut Include="$(SpaRoot)dist\**\*" />
+    </ItemGroup>
+    <Error Condition="'@(_SpaOut)' == ''" Text="Vite did not produce $(SpaRoot)dist — check core-crm-suite build output." />
+    <RemoveDir Directories="$(WwwRootDir)" Condition="Exists('$(WwwRootDir)')" />
+    <MakeDir Directories="$(WwwRootDir)" />
+    <Copy SourceFiles="@(_SpaOut)" DestinationFolder="$(WwwRootDir)\%(_SpaOut.RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Content globs are evaluated before BuildSpa; push wwwroot into the publish folder explicitly. -->
+  <Target Name="CopyWwwRootToPublish" AfterTargets="BuildSpa" BeforeTargets="CopyFilesToPublishDirectory" Condition="'$(PublishDir)' != '' AND Exists('$(WwwRootDir)\index.html')">
+    <MakeDir Directories="$(PublishDir)wwwroot" />
+    <ItemGroup>
+      <_WwwOut Include="$(WwwRootDir)\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_WwwOut)" DestinationFiles="@(_WwwOut->'$(PublishDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="false" />
+  </Target>
+
+</Project>

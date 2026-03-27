@@ -1,0 +1,62 @@
+# Build results
+bin/
+obj/
+out/
+.vs/
+.vscode/
+
+# Entity Framework
+Migrations/
+*.db
+*.sqlite
+
+# User-specific files
+*.user
+*.suo
+*.userprefs
+
+# IDE specific files
+.idea/
+*.swp
+*.swo
+*~
+
+# Mac
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Dependencies
+packages/
+.nuget/
+
+# Build
+publish/
+dist/
+wwwroot/
+
+# Runtime
+*.pdb
+*.dll
+*.exe
+
+# Configuration with sensitive data
+appsettings.*.json
+!appsettings.json
+!appsettings.Development.json
+!appsettings.Production.json
+
+# VS Code
+.vscode/launch.json
+.vscode/settings.json
+
+# Testing
+.coverage/
+TestResults/
