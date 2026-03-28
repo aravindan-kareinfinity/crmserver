@@ -76,6 +76,48 @@ namespace CRM.Server.Services
         private static string? ResolveCreatorName(long createdBy, IReadOnlyDictionary<long, string> names) =>
             names.TryGetValue(createdBy, out var n) && !string.IsNullOrWhiteSpace(n) ? n : null;
 
+        /// <summary>Second key for <c>pg_advisory_xact_lock</c> (customer code sequence).</summary>
+        private const int CustomerCodeAdvisoryLockKey2 = 0x4372_6D63;
+
+        private async Task<int> GetMaxCustomerSequenceForYearAsync(int year)
+        {
+            var prefix = $"{year}/";
+            var codes = await _context.Customers.AsNoTracking()
+                .Where(c => c.Code != null && c.Code.StartsWith(prefix))
+                .Select(c => c.Code!)
+                .ToListAsync();
+            var max = 0;
+            foreach (var code in codes)
+            {
+                var slash = code.IndexOf('/');
+                if (slash < 0 || slash >= code.Length - 1)
+                    continue;
+                var tail = code[(slash + 1)..].Trim();
+                if (int.TryParse(tail, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var seq) && seq > max)
+                    max = seq;
+            }
+
+            return max;
+        }
+
+        /// <summary>
+        /// Reserve sequential customer codes (<c>2026/0001</c>, …). Must run inside an open transaction; uses a per-year PostgreSQL advisory lock.
+        /// </summary>
+        private async Task<IReadOnlyList<string>> ReserveCustomerCodesAsync(int year, int count)
+        {
+            if (count <= 0)
+                return Array.Empty<string>();
+
+            await _context.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock({year}, {CustomerCodeAdvisoryLockKey2})");
+
+            var max = await GetMaxCustomerSequenceForYearAsync(year);
+            var list = new List<string>(count);
+            for (var i = 1; i <= count; i++)
+                list.Add($"{year}/{max + i:D4}");
+            return list;
+        }
+
         private static CustomerResponseDto MapCustomer(Customer c, string? createdByName = null) => new()
         {
             Id = c.Id,
@@ -191,11 +233,15 @@ namespace CRM.Server.Services
 
         public async Task<ApiResponse<CustomerResponseDto>> CreateCustomer(CreateCustomerDto dto)
         {
+            await using var tx = await _context.Database.BeginTransactionAsync();
             try
             {
                 var now = DateTime.UtcNow;
+                var year = now.Year;
+                var codes = await ReserveCustomerCodesAsync(year, 1);
                 var customer = new Customer
                 {
+                    Code = codes[0],
                     RegName = dto.RegName,
                     Mobile = dto.Mobile,
                     Email = dto.Email,
@@ -222,6 +268,7 @@ namespace CRM.Server.Services
                 };
                 _context.Customers.Add(customer);
                 await _context.SaveChangesAsync();
+                await tx.CommitAsync();
                 var createdNames = await LoadCreatorDisplayNamesAsync(new[] { customer.CreatedBy });
                 return new ApiResponse<CustomerResponseDto>
                 {
@@ -232,6 +279,7 @@ namespace CRM.Server.Services
             }
             catch (Exception ex)
             {
+                await tx.RollbackAsync();
                 return new ApiResponse<CustomerResponseDto> { Success = false, Message = ex.Message };
             }
         }

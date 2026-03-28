@@ -17,10 +17,7 @@ namespace CRM.Server.Services
             public const int Customer = 90;
         }
 
-        private static readonly string[] BulkRequiredHeaders =
-        {
-            "reg_name", "mobile", "email", "address_line_1", "pincode", "shop_size", "city_tier"
-        };
+        private static readonly string[] BulkRequiredHeaders = { "reg_name" };
 
         public async Task<ApiResponse<BulkImportCustomersResultDto>> ImportCustomersFromSpreadsheetAsync(Stream stream)
         {
@@ -119,10 +116,14 @@ namespace CRM.Server.Services
             try
             {
                 var now = DateTime.UtcNow;
+                var year = now.Year;
+                var reservedCodes = await ReserveCustomerCodesAsync(year, staged.Count);
                 var addedCustomers = new List<Customer>();
-                foreach (var s in staged)
+                for (var idx = 0; idx < staged.Count; idx++)
                 {
+                    var s = staged[idx];
                     var customer = CustomerFromCreateDto(s.Dto, now);
+                    customer.Code = reservedCodes[idx];
                     customer.Timelines.Add(new CustomerTimeline
                     {
                         Type = 1,
@@ -223,6 +224,13 @@ namespace CRM.Server.Services
             return row[idx]?.Trim() ?? "";
         }
 
+        private static int? FirstRefIdInCategory(List<ReferenceEntry> entries, string category) =>
+            entries
+                .Where(e => e.IsActive && string.Equals(e.Category, category, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(e => e.Id)
+                .Select(e => (int?)e.Id)
+                .FirstOrDefault();
+
         private static int? ResolveRefId(List<ReferenceEntry> entries, string category, string raw)
         {
             var t = raw.Trim();
@@ -280,28 +288,29 @@ namespace CRM.Server.Services
 
             if (regName.Length == 0)
                 return (rowIndex, "", null, $"Row {rowIndex}: reg_name is required");
-            if (mobile.Length == 0)
-                return (rowIndex, regName, null, $"Row {rowIndex}: mobile is required — {regName}");
-            if (email.Length == 0)
-                return (rowIndex, regName, null, $"Row {rowIndex}: email is required — {regName}");
-            if (addressLine1.Length == 0)
-                return (rowIndex, regName, null, $"Row {rowIndex}: address_line_1 is required — {regName}");
-            if (pincode.Length == 0)
-                return (rowIndex, regName, null, $"Row {rowIndex}: pincode is required — {regName}");
 
-            if (!Regex.IsMatch(pincode.Trim(), @"^\d{6}$"))
+            if (pincode.Trim().Length > 0 && !Regex.IsMatch(pincode.Trim(), @"^\d{6}$"))
                 return (rowIndex, regName, null, $"Row {rowIndex}: pincode must be exactly 6 digits (got '{pincode}') — {regName}");
 
             var mobileDigits = NormalizeBulkMobile(mobile);
-            if (mobileDigits.Length != 10)
+            if (mobile.Trim().Length > 0 && mobileDigits.Length != 10)
                 return (rowIndex, regName, null, $"Row {rowIndex}: mobile must be 10 digits (got '{mobile}') — {regName}");
 
-            var shopSizeId = ResolveRefId(entries, "Shop Size", Get("shop_size"));
-            var tierId = ResolveRefId(entries, "City Tier", Get("city_tier"));
+            var shopSizeRaw = Get("shop_size");
+            var shopSizeId = ResolveRefId(entries, "Shop Size", shopSizeRaw);
+            if (shopSizeId == null && shopSizeRaw.Trim().Length > 0)
+                return (rowIndex, regName, null, $"Row {rowIndex}: Unknown shop_size: '{shopSizeRaw}' — {regName}");
+            shopSizeId ??= FirstRefIdInCategory(entries, "Shop Size");
             if (shopSizeId == null)
-                return (rowIndex, regName, null, $"Row {rowIndex}: Unknown shop_size: '{Get("shop_size")}' — {regName}");
+                return (rowIndex, regName, null, $"Row {rowIndex}: No Shop Size reference data — {regName}");
+
+            var tierRaw = Get("city_tier");
+            var tierId = ResolveRefId(entries, "City Tier", tierRaw);
+            if (tierId == null && tierRaw.Trim().Length > 0)
+                return (rowIndex, regName, null, $"Row {rowIndex}: Unknown city_tier: '{tierRaw}' — {regName}");
+            tierId ??= FirstRefIdInCategory(entries, "City Tier");
             if (tierId == null)
-                return (rowIndex, regName, null, $"Row {rowIndex}: Unknown city_tier: '{Get("city_tier")}' — {regName}");
+                return (rowIndex, regName, null, $"Row {rowIndex}: No City Tier reference data — {regName}");
 
             var typeRaw = Get("type");
             var typeId = ResolveRefId(entries, "Customer Type", typeRaw);
@@ -320,8 +329,16 @@ namespace CRM.Server.Services
             var mobilesList = SplitList(Get("mobiles"));
             var emailsList = SplitList(Get("emails"));
 
-            var primaryMobiles = mobilesList.Count > 0 ? mobilesList : new List<string> { mobile };
-            var primaryEmails = emailsList.Count > 0 ? emailsList : new List<string> { email };
+            var primaryMobiles = mobilesList.Count > 0
+                ? mobilesList
+                : mobile.Trim().Length > 0
+                    ? new List<string> { mobile }
+                    : new List<string>();
+            var primaryEmails = emailsList.Count > 0
+                ? emailsList
+                : email.Trim().Length > 0
+                    ? new List<string> { email }
+                    : new List<string>();
             var persons = contactPersons.Count > 0 ? contactPersons : new List<string> { regName };
 
             var gst = Get("gst");
@@ -358,12 +375,19 @@ namespace CRM.Server.Services
             var mobileToRows = new Dictionary<string, List<int>>(StringComparer.Ordinal);
             foreach (var s in staged)
             {
-                if (!emailToRows.ContainsKey(s.EmailNorm))
-                    emailToRows[s.EmailNorm] = new List<int>();
-                emailToRows[s.EmailNorm].Add(s.RowIndex);
-                if (!mobileToRows.ContainsKey(s.MobileNorm))
-                    mobileToRows[s.MobileNorm] = new List<int>();
-                mobileToRows[s.MobileNorm].Add(s.RowIndex);
+                if (s.EmailNorm.Length > 0)
+                {
+                    if (!emailToRows.ContainsKey(s.EmailNorm))
+                        emailToRows[s.EmailNorm] = new List<int>();
+                    emailToRows[s.EmailNorm].Add(s.RowIndex);
+                }
+
+                if (s.MobileNorm.Length > 0)
+                {
+                    if (!mobileToRows.ContainsKey(s.MobileNorm))
+                        mobileToRows[s.MobileNorm] = new List<int>();
+                    mobileToRows[s.MobileNorm].Add(s.RowIndex);
+                }
             }
 
             foreach (var g in emailToRows.Values.Where(x => x.Count >= 2))
@@ -394,21 +418,27 @@ namespace CRM.Server.Services
         {
             foreach (var s in staged)
             {
-                foreach (var ex in existingRows)
+                if (s.EmailNorm.Length > 0)
                 {
-                    if (NormalizeBulkEmail(ex.Email ?? "") == s.EmailNorm)
+                    foreach (var ex in existingRows)
                     {
-                        rowErrors.Add($"Row {s.RowIndex}: duplicate email already in CRM — \"{ex.RegName}\" (id {ex.Id})");
-                        break;
+                        if (NormalizeBulkEmail(ex.Email ?? "") == s.EmailNorm)
+                        {
+                            rowErrors.Add($"Row {s.RowIndex}: duplicate email already in CRM — \"{ex.RegName}\" (id {ex.Id})");
+                            break;
+                        }
                     }
                 }
 
-                foreach (var ex in existingRows)
+                if (s.MobileNorm.Length > 0)
                 {
-                    if (NormalizeBulkMobile(ex.Mobile ?? "") == s.MobileNorm)
+                    foreach (var ex in existingRows)
                     {
-                        rowErrors.Add($"Row {s.RowIndex}: duplicate mobile already in CRM — \"{ex.RegName}\" (id {ex.Id})");
-                        break;
+                        if (NormalizeBulkMobile(ex.Mobile ?? "") == s.MobileNorm)
+                        {
+                            rowErrors.Add($"Row {s.RowIndex}: duplicate mobile already in CRM — \"{ex.RegName}\" (id {ex.Id})");
+                            break;
+                        }
                     }
                 }
             }
