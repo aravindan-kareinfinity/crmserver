@@ -128,6 +128,14 @@ INSERT INTO reference_entries (category, label, value, is_active, sort_order) VA
 ('Ticket Category', 'Billing', 'billing', true, 4);
 
 INSERT INTO reference_entries (category, label, value, is_active, sort_order) VALUES
+('Ticket Module', 'Customers', 'customers', true, 1),
+('Ticket Module', 'Services', 'services', true, 2),
+('Ticket Module', 'Invoices', 'invoices', true, 3),
+('Ticket Module', 'Investments', 'investments', true, 4),
+('Ticket Module', 'Tickets', 'tickets', true, 5),
+('Ticket Module', 'Implementation', 'implementation', true, 6);
+
+INSERT INTO reference_entries (category, label, value, is_active, sort_order) VALUES
 ('Lead Source', 'External', 'external', true, 1),
 ('Lead Source', 'Internal', 'internal', true, 2),
 ('Lead Source', 'Exhibition / Fair', 'exhibition_fair', true, 3),

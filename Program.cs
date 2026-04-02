@@ -2,6 +2,7 @@ using System.IO;
 using CRM.Server.Data;
 using CRM.Server.Models;
 using CRM.Server.Services;
+using CRM.Server.Utils;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.EntityFrameworkCore;
@@ -36,6 +37,10 @@ dataSourceBuilder.MapEnum<TicketPriority>("ticket_priority");
 dataSourceBuilder.MapEnum<ImplementationWorkflowStatus>("implementation_status_enum");
 var npgsqlDataSource = dataSourceBuilder.Build();
 builder.Services.AddSingleton(npgsqlDataSource);
+
+// SQL-first infrastructure (manual SQL + IDb/QueryBuilder syntax)
+builder.Services.AddSingleton<IQueryBuilderProvider, QueryBuilderProvider>();
+builder.Services.AddScoped<IDbProvider, PostgreSQLProvider>();
 
 builder.Services.AddDbContext<CrmDbContext>(options =>
     options.UseNpgsql(npgsqlDataSource).UseSnakeCaseNamingConvention());
