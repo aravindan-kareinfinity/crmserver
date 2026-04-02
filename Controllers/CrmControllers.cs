@@ -46,6 +46,16 @@ namespace CRM.Server.Controllers
             return Ok(result);
         }
 
+        /// <summary>Lookup by stable <c>customers.code</c> (e.g. 2026/0001).</summary>
+        [HttpGet("by-code")]
+        public async Task<ActionResult<ApiResponse<CustomerResponseDto>>> GetCustomerByCode([FromQuery] string code)
+        {
+            var result = await _customerService.GetCustomerByCode(code);
+            if (!result.Success)
+                return NotFound(result);
+            return Ok(result);
+        }
+
         [HttpGet("type-id/{typeId:int}")]
         public async Task<ActionResult<ApiResponse<List<CustomerResponseDto>>>> GetCustomersByTypeId(int typeId)
         {
@@ -65,10 +75,38 @@ namespace CRM.Server.Controllers
             return Ok(result);
         }
 
+        /// <summary>
+        /// UI Contacts (/contacts): leads + prospects only (excludes customers).
+        /// </summary>
+        [HttpGet("contacts")]
+        public async Task<ActionResult<ApiResponse<List<CustomerResponseDto>>>> GetContacts()
+        {
+            var lead = await _customerService.GetCustomersByType("lead");
+            if (!lead.Success) return BadRequest(lead);
+            var prospect = await _customerService.GetCustomersByType("prospect");
+            if (!prospect.Success) return BadRequest(prospect);
+
+            var merged = lead.Data.Concat(prospect.Data)
+                .GroupBy(x => x.Id)
+                .Select(g => g.First())
+                .OrderByDescending(x => x.CreatedAt)
+                .ToList();
+
+            return Ok(new ApiResponse<List<CustomerResponseDto>> { Success = true, Data = merged });
+        }
+
         [HttpGet("{customerId:int}/timeline")]
         public async Task<ActionResult<ApiResponse<List<CustomerTimelineEntryDto>>>> GetCustomerTimeline(int customerId)
         {
             var result = await _customerService.GetCustomerTimeline(customerId);
+            if (!result.Success) return BadRequest(result);
+            return Ok(result);
+        }
+
+        [HttpGet("timeline/by-code")]
+        public async Task<ActionResult<ApiResponse<List<CustomerTimelineEntryDto>>>> GetCustomerTimelineByCode([FromQuery] string customerCode)
+        {
+            var result = await _customerService.GetCustomerTimelineByCustomerCode(customerCode);
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }
@@ -83,10 +121,22 @@ namespace CRM.Server.Controllers
             return Ok(result);
         }
 
+        [HttpPost("timeline/by-code")]
+        public async Task<ActionResult<ApiResponse<CustomerTimelineEntryDto>>> AddCustomerTimelineByCode(
+            [FromQuery] string customerCode,
+            [FromBody] AddTimelineEntryDto dto)
+        {
+            var result = await _customerService.AddCustomerTimelineEntryByCustomerCode(customerCode, dto);
+            if (!result.Success) return BadRequest(result);
+            return Ok(result);
+        }
+
         /// <summary>Multipart .xlsx bulk import; must be registered before parameterized POST routes.</summary>
         [HttpPost("bulk")]
         [RequestSizeLimit(20_000_000)]
-        public async Task<ActionResult<ApiResponse<BulkImportCustomersResultDto>>> BulkImportCustomers(IFormFile? file)
+        public async Task<ActionResult<ApiResponse<BulkImportCustomersResultDto>>> BulkImportCustomers(
+            IFormFile? file,
+            [FromForm] long? userId = null)
         {
             if (file == null || file.Length == 0)
                 return BadRequest(new ApiResponse<BulkImportCustomersResultDto>
@@ -105,7 +155,7 @@ namespace CRM.Server.Controllers
                 });
 
             await using var stream = file.OpenReadStream();
-            var result = await _customerService.ImportCustomersFromSpreadsheetAsync(stream);
+            var result = await _customerService.ImportCustomersFromSpreadsheetAsync(stream, userId);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -197,6 +247,15 @@ namespace CRM.Server.Controllers
             return Ok(result);
         }
 
+        [HttpGet("customer/by-code")]
+        public async Task<ActionResult<ApiResponse<List<ServiceResponseDto>>>> GetServicesByCustomerCode([FromQuery] string customerCode)
+        {
+            var result = await _serviceService.GetServicesByCustomerCode(customerCode);
+            if (!result.Success)
+                return BadRequest(result);
+            return Ok(result);
+        }
+
         [HttpGet("{id:int}/implementation-timeline")]
         public async Task<ActionResult<ApiResponse<List<ImplementationTimelineEntryDto>>>> GetImplementationTimeline(int id)
         {
@@ -241,6 +300,15 @@ namespace CRM.Server.Controllers
         public async Task<ActionResult<ApiResponse<ServiceResponseDto>>> UpdateService(int id, UpdateServiceDto dto)
         {
             var result = await _serviceService.UpdateService(id, dto);
+            if (!result.Success)
+                return BadRequest(result);
+            return Ok(result);
+        }
+
+        [HttpPut("{id:int}/go-live")]
+        public async Task<ActionResult<ApiResponse<ServiceResponseDto>>> GoLive(int id, [FromBody] GoLiveServiceDto dto)
+        {
+            var result = await _serviceService.GoLive(id, dto);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -303,6 +371,15 @@ namespace CRM.Server.Controllers
             return Ok(result);
         }
 
+        [HttpGet("customer/by-code")]
+        public async Task<ActionResult<ApiResponse<List<InvoiceResponseDto>>>> GetInvoicesByCustomerCode([FromQuery] string customerCode)
+        {
+            var result = await _invoiceService.GetInvoicesByCustomerCode(customerCode);
+            if (!result.Success)
+                return BadRequest(result);
+            return Ok(result);
+        }
+
         [HttpGet("staff/{staffId:int}")]
         public async Task<ActionResult<ApiResponse<List<InvoiceResponseDto>>>> GetByStaffId(int staffId)
         {
@@ -355,6 +432,34 @@ namespace CRM.Server.Controllers
 
     [ApiController]
     [Route("api/[controller]")]
+    public class PaymentsController : ControllerBase
+    {
+        private readonly IPaymentService _paymentService;
+
+        public PaymentsController(IPaymentService paymentService)
+        {
+            _paymentService = paymentService;
+        }
+
+        [HttpGet("invoice/{invoiceId:int}")]
+        public async Task<ActionResult<ApiResponse<List<PaymentResponseDto>>>> GetByInvoice(int invoiceId)
+        {
+            var result = await _paymentService.GetByInvoice(invoiceId);
+            if (!result.Success) return BadRequest(result);
+            return Ok(result);
+        }
+
+        [HttpPost("collect")]
+        public async Task<ActionResult<ApiResponse<CollectPaymentResultDto>>> Collect(CollectPaymentDto dto)
+        {
+            var result = await _paymentService.Collect(dto);
+            if (!result.Success) return BadRequest(result);
+            return Ok(result);
+        }
+    }
+
+    [ApiController]
+    [Route("api/[controller]")]
     public class TicketsController : ControllerBase
     {
         private readonly ITicketService _ticketService;
@@ -387,6 +492,14 @@ namespace CRM.Server.Controllers
         public async Task<ActionResult<ApiResponse<List<TicketResponseDto>>>> GetByCustomerId(int customerId)
         {
             var result = await _ticketService.GetByCustomerId(customerId);
+            if (!result.Success) return BadRequest(result);
+            return Ok(result);
+        }
+
+        [HttpGet("customer/by-code")]
+        public async Task<ActionResult<ApiResponse<List<TicketResponseDto>>>> GetTicketsByCustomerCode([FromQuery] string customerCode)
+        {
+            var result = await _ticketService.GetByCustomerCode(customerCode);
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }
@@ -494,6 +607,14 @@ namespace CRM.Server.Controllers
             return Ok(result);
         }
 
+        [HttpGet("customer/by-code/list")]
+        public async Task<ActionResult<ApiResponse<List<LocationResponseDto>>>> GetLocationsListByCustomerCode([FromQuery] string customerCode)
+        {
+            var result = await _locationService.GetByCustomerCode(customerCode);
+            if (!result.Success) return BadRequest(result);
+            return Ok(result);
+        }
+
         [HttpGet("customer/{customerId:int}")]
         public async Task<ActionResult<ApiResponse<PaginatedResponse<LocationResponseDto>>>> GetLocationsByCustomer(
             int customerId,
@@ -501,6 +622,18 @@ namespace CRM.Server.Controllers
             [FromQuery] int pageSize = 10)
         {
             var result = await _locationService.GetLocationsByCustomer(customerId, pageNumber, pageSize);
+            if (!result.Success)
+                return BadRequest(result);
+            return Ok(result);
+        }
+
+        [HttpGet("customer/by-code")]
+        public async Task<ActionResult<ApiResponse<PaginatedResponse<LocationResponseDto>>>> GetLocationsByCustomerCode(
+            [FromQuery] string customerCode,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10)
+        {
+            var result = await _locationService.GetLocationsByCustomerCode(customerCode, pageNumber, pageSize);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);

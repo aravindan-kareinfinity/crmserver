@@ -45,6 +45,7 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<IServiceService, ServiceService>();
 builder.Services.AddScoped<IInvoiceService, InvoiceService>();
+builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<ILocationService, LocationService>();
 builder.Services.AddScoped<IReferenceService, ReferenceService>();
@@ -110,6 +111,11 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseAuthorization();
 app.MapControllers().RequireCors("AllowAll");
+// No wwwroot/index.html in repo by default — bare GET / would 404. In dev, send browsers to Swagger.
+if (app.Environment.IsDevelopment())
+{
+    app.MapGet("/", () => Results.Redirect("/swagger"));
+}
 app.MapFallbackToFile("index.html");
 
 var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
@@ -139,8 +145,12 @@ lifetime.ApplicationStarted.Register(() =>
         }
 
         if (app.Environment.IsDevelopment())
-            Console.WriteLine("  Swagger UI:    /swagger");
-        Console.WriteLine("  Web app / SPA: / (and /auth/login, etc.)");
+        {
+            Console.WriteLine("  Swagger UI:    /swagger (append to any listening URL above)");
+            Console.WriteLine("  React UI (dev): run core-crm-suite `npm run dev` — default http://localhost:5173 (proxies /api → this server)");
+        }
+        else
+            Console.WriteLine("  Web app / SPA: / when wwwroot/index.html is published");
         Console.WriteLine("========================================");
         Console.WriteLine();
     }

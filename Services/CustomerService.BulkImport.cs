@@ -19,8 +19,9 @@ namespace CRM.Server.Services
 
         private static readonly string[] BulkRequiredHeaders = { "reg_name" };
 
-        public async Task<ApiResponse<BulkImportCustomersResultDto>> ImportCustomersFromSpreadsheetAsync(Stream stream)
+        public async Task<ApiResponse<BulkImportCustomersResultDto>> ImportCustomersFromSpreadsheetAsync(Stream stream, long? userId = null)
         {
+            var auditUserId = userId.HasValue && userId.Value > 0 ? userId.Value : AuditUserIds.System;
             var fail = (string message, List<string>? rowErrors = null) =>
                 new ApiResponse<BulkImportCustomersResultDto>
                 {
@@ -122,7 +123,7 @@ namespace CRM.Server.Services
                 for (var idx = 0; idx < staged.Count; idx++)
                 {
                     var s = staged[idx];
-                    var customer = CustomerFromCreateDto(s.Dto, now);
+                    var customer = CustomerFromCreateDto(s.Dto, now, auditUserId);
                     customer.Code = reservedCodes[idx];
                     customer.Timelines.Add(new CustomerTimeline
                     {
@@ -130,9 +131,9 @@ namespace CRM.Server.Services
                         Notes = "Imported via bulk upload",
                         IsActive = true,
                         CreatedAt = now,
-                        CreatedBy = AuditUserIds.System,
+                        CreatedBy = auditUserId,
                         ModifiedAt = now,
-                        ModifiedBy = AuditUserIds.System
+                        ModifiedBy = auditUserId
                     });
                     _context.Customers.Add(customer);
                     addedCustomers.Add(customer);
@@ -141,7 +142,7 @@ namespace CRM.Server.Services
                 await _context.SaveChangesAsync();
                 await tx.CommitAsync();
 
-                var bulkCreatorNames = await LoadCreatorDisplayNamesAsync(addedCustomers.Select(c => c.CreatedBy));
+                var bulkCreatorNames = await LoadCreatorDisplayNamesAsync(CustomerDisplayUserIdsMany(addedCustomers));
 
                 return new ApiResponse<BulkImportCustomersResultDto>
                 {
@@ -151,7 +152,7 @@ namespace CRM.Server.Services
                     {
                         ImportedCount = addedCustomers.Count,
                         Created = addedCustomers
-                            .Select(c => MapCustomer(c, ResolveCreatorName(c.CreatedBy, bulkCreatorNames)))
+                            .Select(c => MapCustomer(c, bulkCreatorNames))
                             .ToList()
                     }
                 };
@@ -165,7 +166,7 @@ namespace CRM.Server.Services
 
         private sealed record ExistingCustomerSnapshot(int Id, string RegName, string? Email, string? Mobile);
 
-        private static Customer CustomerFromCreateDto(CreateCustomerDto dto, DateTime now) => new()
+        private static Customer CustomerFromCreateDto(CreateCustomerDto dto, DateTime now, long auditUserId) => new()
         {
             RegName = dto.RegName,
             Mobile = dto.Mobile,
@@ -187,9 +188,9 @@ namespace CRM.Server.Services
             TypeId = dto.TypeId,
             IsActive = true,
             CreatedAt = now,
-            CreatedBy = AuditUserIds.System,
+            CreatedBy = auditUserId,
             ModifiedAt = now,
-            ModifiedBy = AuditUserIds.System
+            ModifiedBy = auditUserId
         };
 
         private static string CellText(IXLCell cell)
@@ -371,10 +372,19 @@ namespace CRM.Server.Services
             List<(int RowIndex, string RegName, CreateCustomerDto Dto, string EmailNorm, string MobileNorm)> staged,
             List<string> rowErrors)
         {
+            var nameToRows = new Dictionary<string, List<int>>(StringComparer.Ordinal);
             var emailToRows = new Dictionary<string, List<int>>(StringComparer.Ordinal);
             var mobileToRows = new Dictionary<string, List<int>>(StringComparer.Ordinal);
             foreach (var s in staged)
             {
+                var nameNorm = NormalizeBulkRegName(s.RegName);
+                if (nameNorm.Length > 0)
+                {
+                    if (!nameToRows.ContainsKey(nameNorm))
+                        nameToRows[nameNorm] = new List<int>();
+                    nameToRows[nameNorm].Add(s.RowIndex);
+                }
+
                 if (s.EmailNorm.Length > 0)
                 {
                     if (!emailToRows.ContainsKey(s.EmailNorm))
@@ -387,6 +397,16 @@ namespace CRM.Server.Services
                     if (!mobileToRows.ContainsKey(s.MobileNorm))
                         mobileToRows[s.MobileNorm] = new List<int>();
                     mobileToRows[s.MobileNorm].Add(s.RowIndex);
+                }
+            }
+
+            foreach (var g in nameToRows.Values.Where(x => x.Count >= 2))
+            {
+                var sorted = g.Distinct().OrderBy(x => x).ToList();
+                foreach (var ri in sorted)
+                {
+                    var others = sorted.Where(x => x != ri).ToList();
+                    rowErrors.Add($"Row {ri}: duplicate registered name in this file (same as row(s) {string.Join(", ", others)})");
                 }
             }
 
@@ -418,6 +438,19 @@ namespace CRM.Server.Services
         {
             foreach (var s in staged)
             {
+                var regNorm = NormalizeBulkRegName(s.RegName);
+                if (regNorm.Length > 0)
+                {
+                    foreach (var ex in existingRows)
+                    {
+                        if (NormalizeBulkRegName(ex.RegName) == regNorm)
+                        {
+                            rowErrors.Add($"Row {s.RowIndex}: duplicate registered name already in CRM — \"{ex.RegName}\" (id {ex.Id})");
+                            break;
+                        }
+                    }
+                }
+
                 if (s.EmailNorm.Length > 0)
                 {
                     foreach (var ex in existingRows)
@@ -442,6 +475,15 @@ namespace CRM.Server.Services
                     }
                 }
             }
+        }
+
+        private static string NormalizeBulkRegName(string regName)
+        {
+            var s = (regName ?? "").Trim().ToLowerInvariant();
+            if (s.Length == 0) return "";
+            // Normalize internal whitespace so "Rockfort  Collection" == "Rockfort Collection"
+            s = Regex.Replace(s, @"\s+", " ");
+            return s;
         }
 
         private static void SortRowErrors(List<string> rowErrors)

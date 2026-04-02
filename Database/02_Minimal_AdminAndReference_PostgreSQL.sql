@@ -3,11 +3,13 @@
 --
 -- Default login (change in production):
 --   Email:    admin@local.dev
---   Password: Admin@123
--- BCrypt hash: Admin@123 (BCrypt.Net-Next).
+--   Password: password
+-- BCrypt hash: password (BCrypt.Net-Next).
 
+-- Safe to re-run: skips rows that already exist (unique on roles.name, users.user_id / users.email).
 INSERT INTO roles (name, description, permissions, user_count) VALUES
-('Admin', 'Full system access', 'all', 1);
+    ('Admin', 'Full system access', 'all', 1)
+ON CONFLICT (name) DO NOTHING;
 
 INSERT INTO users (
     user_id,
@@ -24,13 +26,14 @@ INSERT INTO users (
     'admin',
     'Admin',
     'User',
-    'admin@local.dev',
-    '$2a$11$oV7so.scIhBs9/6E3K9hfeaObJpNELnsxvjNHAnEJlVk1pSp8//QC',
+    'admin@crm',
+    '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
     'Admin',
     true,
     CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP
-);
+)
+ON CONFLICT (user_id) DO NOTHING;
 
-SELECT 'Admin role + user inserted' AS status;
+SELECT 'Admin seed script finished (skipped any existing Admin role / admin user)' AS status;

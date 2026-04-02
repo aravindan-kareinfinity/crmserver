@@ -86,12 +86,13 @@ CREATE TABLE roles (
 -- ========== CREATE CUSTOMERS TABLE ==========
 CREATE TABLE customers (
     id SERIAL PRIMARY KEY,
-    code VARCHAR(100),
+    code VARCHAR(100) NOT NULL UNIQUE,
     reg_name VARCHAR(255) NOT NULL,
     mobile VARCHAR(10) NOT NULL,
     email VARCHAR(255) NOT NULL,
     business_type_id INTEGER,
     industry_id INTEGER,
+    lead_source_id INTEGER,
     address_line1 VARCHAR(255) NOT NULL,
     address_line2 VARCHAR(255),
     city_id INTEGER,
@@ -112,28 +113,72 @@ CREATE TABLE customers (
     created_by BIGINT,
     converted_at TIMESTAMP,
     converted_by VARCHAR(255),
+    prospect_converted_at TIMESTAMP,
+    prospect_converted_by BIGINT,
+    customer_converted_at TIMESTAMP,
+    customer_converted_by BIGINT,
     pipeline_status VARCHAR(80),
+    product_features_discussed BOOLEAN NOT NULL DEFAULT false,
+    assigned_representative_id BIGINT,
+    interaction_mode_id INTEGER,
+    price_plan_selected BOOLEAN NOT NULL DEFAULT false,
+    quotation_prepared_sent BOOLEAN NOT NULL DEFAULT false,
+    quotation_accepted BOOLEAN NOT NULL DEFAULT false,
+    advance_payment_received BOOLEAN NOT NULL DEFAULT false,
+    invoice_generated BOOLEAN NOT NULL DEFAULT false,
+    invoice_number VARCHAR(80),
     modified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_by BIGINT,
     FOREIGN KEY (business_type_id) REFERENCES reference_entries(id),
     FOREIGN KEY (industry_id) REFERENCES reference_entries(id),
+    FOREIGN KEY (lead_source_id) REFERENCES reference_entries(id),
     FOREIGN KEY (city_id) REFERENCES reference_entries(id),
     FOREIGN KEY (state_id) REFERENCES reference_entries(id),
     FOREIGN KEY (country_id) REFERENCES reference_entries(id),
     FOREIGN KEY (shop_size_id) REFERENCES reference_entries(id),
     FOREIGN KEY (tier_id) REFERENCES reference_entries(id),
-    FOREIGN KEY (type_id) REFERENCES reference_entries(id)
+    FOREIGN KEY (type_id) REFERENCES reference_entries(id),
+    FOREIGN KEY (interaction_mode_id) REFERENCES reference_entries(id),
+    FOREIGN KEY (prospect_converted_by) REFERENCES users(id),
+    FOREIGN KEY (customer_converted_by) REFERENCES users(id)
 );
 
 CREATE INDEX idx_customer_email ON customers(email);
 CREATE INDEX idx_customer_type_id ON customers(type_id);
 CREATE INDEX idx_customer_is_active ON customers(is_active);
 CREATE INDEX idx_customer_created_at ON customers(created_at);
+CREATE INDEX idx_customer_lead_source_id ON customers(lead_source_id);
+CREATE INDEX idx_customers_prospect_converted_at ON customers(prospect_converted_at);
+CREATE INDEX idx_customers_customer_converted_at ON customers(customer_converted_at);
+
+-- ========== CREATE PAYMENTS TABLE ==========
+CREATE TABLE payments (
+    id SERIAL PRIMARY KEY,
+    invoice_id INTEGER NOT NULL,
+    customer_code VARCHAR(100) NOT NULL,
+    amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    remaining NUMERIC(12,2) NOT NULL DEFAULT 0,
+    payment_mode_id INTEGER NOT NULL,
+    received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    notes VARCHAR(500),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by BIGINT,
+    modified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    modified_by BIGINT,
+    FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_code) REFERENCES customers(code) ON DELETE CASCADE,
+    FOREIGN KEY (payment_mode_id) REFERENCES reference_entries(id)
+);
+
+CREATE INDEX idx_payments_invoice_id ON payments(invoice_id);
+CREATE INDEX idx_payments_customer_code ON payments(customer_code);
+CREATE INDEX idx_payments_received_at ON payments(received_at);
 
 -- ========== CREATE CUSTOMER TIMELINE TABLE ==========
 CREATE TABLE customer_timelines (
     id SERIAL PRIMARY KEY,
-    customer_id INTEGER NOT NULL,
+    customer_code VARCHAR(100) NOT NULL,
     type INTEGER NOT NULL,
     notes TEXT NOT NULL,
     file_id INTEGER,
@@ -143,23 +188,25 @@ CREATE TABLE customer_timelines (
     created_by BIGINT NOT NULL DEFAULT 1,
     modified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_by BIGINT,
-    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+    FOREIGN KEY (customer_code) REFERENCES customers(code) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_customer_timeline_customer_id ON customer_timelines(customer_id);
+CREATE INDEX idx_customer_timeline_customer_code ON customer_timelines(customer_code);
 
 -- ========== CREATE SERVICES TABLE ==========
 CREATE TABLE services (
     id SERIAL PRIMARY KEY,
-    customer_id INTEGER NOT NULL,
+    customer_code VARCHAR(100) NOT NULL,
     location_id INTEGER,
     trade_name_id INTEGER,
     service_type_id INTEGER NOT NULL,
     frequency_id INTEGER,
-    due_date INTEGER NOT NULL,
+    due_date TIMESTAMP NOT NULL,
     live_date TIMESTAMP,
     service_value DECIMAL(18,2),
     due_month INTEGER NOT NULL,
+    amc_percentage NUMERIC(6,2),
+    amc_amount NUMERIC(12,2),
     implementation_required BOOLEAN NOT NULL DEFAULT false,
     implementation_status implementation_status_enum NOT NULL DEFAULT 'OPEN',
     implementation_stage_id INTEGER,
@@ -178,7 +225,7 @@ CREATE TABLE services (
     created_by BIGINT,
     modified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_by BIGINT,
-    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_code) REFERENCES customers(code) ON DELETE CASCADE,
     FOREIGN KEY (service_type_id) REFERENCES reference_entries(id),
     FOREIGN KEY (frequency_id) REFERENCES reference_entries(id),
     FOREIGN KEY (implementation_stage_id) REFERENCES reference_entries(id),
@@ -186,7 +233,7 @@ CREATE TABLE services (
     FOREIGN KEY (project_manager_id) REFERENCES users(id)
 );
 
-CREATE INDEX idx_service_customer_id ON services(customer_id);
+CREATE INDEX idx_service_customer_code ON services(customer_code);
 CREATE INDEX idx_service_is_active ON services(is_active);
 CREATE INDEX idx_service_created_at ON services(created_at);
 
@@ -194,7 +241,7 @@ CREATE INDEX idx_service_created_at ON services(created_at);
 CREATE TABLE invoices (
     id SERIAL PRIMARY KEY,
     invoice_number VARCHAR(100) NOT NULL UNIQUE,
-    customer_id INTEGER NOT NULL,
+    customer_code VARCHAR(100) NOT NULL,
     service_id INTEGER NOT NULL,
     staff_id INTEGER,
     payment_mode_id INTEGER NOT NULL,
@@ -210,14 +257,14 @@ CREATE TABLE invoices (
     paid_by VARCHAR(255),
     modified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_by BIGINT,
-    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_code) REFERENCES customers(code) ON DELETE CASCADE,
     FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
     FOREIGN KEY (staff_id) REFERENCES users(id),
     FOREIGN KEY (payment_mode_id) REFERENCES reference_entries(id),
     FOREIGN KEY (payment_status_id) REFERENCES reference_entries(id)
 );
 
-CREATE INDEX idx_invoice_customer_id ON invoices(customer_id);
+CREATE INDEX idx_invoice_customer_code ON invoices(customer_code);
 CREATE INDEX idx_invoice_service_id ON invoices(service_id);
 CREATE INDEX idx_invoice_payment_status ON invoices(payment_status_id);
 CREATE INDEX idx_invoice_created_at ON invoices(created_at);
@@ -243,9 +290,16 @@ CREATE INDEX idx_invoice_timeline_invoice_id ON invoice_timelines(invoice_id);
 -- ========== CREATE INVESTMENTS TABLE ==========
 CREATE TABLE investments (
     id SERIAL PRIMARY KEY,
-    customer_id INTEGER NOT NULL,
+    customer_code VARCHAR(100) NOT NULL,
     location_id INTEGER NOT NULL,
     amount DECIMAL(18,2) NOT NULL,
+    claimed_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    remaining_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    claimed_fully BOOLEAN NOT NULL DEFAULT false,
+    claimed_at TIMESTAMP,
+    claimed_by BIGINT,
+    claim_notes VARCHAR(500),
+    needs_claim BOOLEAN NOT NULL DEFAULT true,
     investment_type_id INTEGER NOT NULL,
     staff_id INTEGER,
     notes TEXT NOT NULL,
@@ -254,13 +308,16 @@ CREATE TABLE investments (
     created_by BIGINT,
     modified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_by BIGINT,
-    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_code) REFERENCES customers(code) ON DELETE CASCADE,
     FOREIGN KEY (investment_type_id) REFERENCES reference_entries(id),
-    FOREIGN KEY (staff_id) REFERENCES users(id)
+    FOREIGN KEY (staff_id) REFERENCES users(id),
+    FOREIGN KEY (claimed_by) REFERENCES users(id)
 );
 
-CREATE INDEX idx_investment_customer_id ON investments(customer_id);
+CREATE INDEX idx_investment_customer_code ON investments(customer_code);
+CREATE INDEX idx_investments_needs_claim ON investments(needs_claim);
 
+-- ========== CREATE INVESTMENT CLAIMS TABLE ==========
 -- ========== CREATE INVESTMENT TIMELINE TABLE ==========
 CREATE TABLE investment_timelines (
     id SERIAL PRIMARY KEY,
@@ -314,10 +371,12 @@ CREATE INDEX idx_implementation_timeline_status ON implementation_timelines(stat
 -- ========== CREATE TICKETS TABLE ==========
 CREATE TABLE tickets (
     id SERIAL PRIMARY KEY,
-    customer_id INTEGER NOT NULL,
+    customer_code VARCHAR(100) NOT NULL,
     location_id INTEGER NOT NULL,
     subject VARCHAR(500) NOT NULL,
     description TEXT NOT NULL,
+    contact_person VARCHAR(255),
+    contact_mobile VARCHAR(20),
     status ticket_status NOT NULL DEFAULT 'open',
     priority ticket_priority NOT NULL DEFAULT 'medium',
     assigned_to INTEGER NOT NULL,
@@ -331,15 +390,16 @@ CREATE TABLE tickets (
     modified_by BIGINT,
     category VARCHAR(100) NOT NULL,
     module VARCHAR(100),
-    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_code) REFERENCES customers(code) ON DELETE CASCADE,
     FOREIGN KEY (assigned_to) REFERENCES users(id)
 );
 
-CREATE INDEX idx_ticket_customer_id ON tickets(customer_id);
+CREATE INDEX idx_ticket_customer_code ON tickets(customer_code);
 CREATE INDEX idx_ticket_status ON tickets(status);
 CREATE INDEX idx_ticket_priority ON tickets(priority);
 CREATE INDEX idx_ticket_assigned_to ON tickets(assigned_to);
 CREATE INDEX idx_ticket_created_at ON tickets(created_at);
+CREATE INDEX idx_tickets_contact_mobile ON tickets(contact_mobile);
 
 -- ========== CREATE TICKET TIMELINE TABLE ==========
 CREATE TABLE ticket_timelines (
@@ -364,7 +424,7 @@ CREATE INDEX idx_ticket_timeline_ticket_id ON ticket_timelines(ticket_id);
 -- ========== CREATE TRADEMARKS TABLE ==========
 CREATE TABLE trademarks (
     id SERIAL PRIMARY KEY,
-    customer_id INTEGER NOT NULL,
+    customer_code VARCHAR(100) NOT NULL,
     location_id INTEGER NOT NULL,
     reg_name VARCHAR(255) NOT NULL,
     gst_number VARCHAR(15) NOT NULL,
@@ -390,20 +450,20 @@ CREATE TABLE trademarks (
     created_by BIGINT,
     modified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_by BIGINT,
-    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_code) REFERENCES customers(code) ON DELETE CASCADE,
     FOREIGN KEY (city_id) REFERENCES reference_entries(id),
     FOREIGN KEY (state_id) REFERENCES reference_entries(id),
     FOREIGN KEY (country_id) REFERENCES reference_entries(id),
     FOREIGN KEY (tier_id) REFERENCES reference_entries(id)
 );
 
-CREATE INDEX idx_trademark_customer_id ON trademarks(customer_id);
+CREATE INDEX idx_trademark_customer_code ON trademarks(customer_code);
 CREATE INDEX idx_trademark_is_active ON trademarks(is_active);
 
 -- ========== CREATE LOCATIONS TABLE ==========
 CREATE TABLE locations (
     id SERIAL PRIMARY KEY,
-    customer_id INTEGER NOT NULL,
+    customer_code VARCHAR(100) NOT NULL,
     code VARCHAR(100) NOT NULL,
     name VARCHAR(255) NOT NULL,
     reg_name VARCHAR(255) NOT NULL,
@@ -425,7 +485,7 @@ CREATE TABLE locations (
     created_by BIGINT,
     modified_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_by BIGINT,
-    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_code) REFERENCES customers(code) ON DELETE CASCADE,
     FOREIGN KEY (city_id) REFERENCES reference_entries(id),
     FOREIGN KEY (state_id) REFERENCES reference_entries(id),
     FOREIGN KEY (country_id) REFERENCES reference_entries(id),
@@ -433,7 +493,7 @@ CREATE TABLE locations (
     FOREIGN KEY (tier_id) REFERENCES reference_entries(id)
 );
 
-CREATE INDEX idx_location_customer_id ON locations(customer_id);
+CREATE INDEX idx_location_customer_code ON locations(customer_code);
 CREATE INDEX idx_location_is_primary ON locations(is_primary);
 CREATE INDEX idx_location_is_active ON locations(is_active);
 

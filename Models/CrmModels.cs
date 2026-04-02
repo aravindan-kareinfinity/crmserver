@@ -98,12 +98,14 @@ namespace CRM.Server.Models
     public class Customer
     {
         public int Id { get; set; }
-        public string? Code { get; set; }
+        /// <summary>Stable business key; child tables FK to this (not <see cref="Id"/>).</summary>
+        public string Code { get; set; } = string.Empty;
         public string RegName { get; set; } = string.Empty;
         public string Mobile { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public int? BusinessTypeId { get; set; }
         public int? IndustryId { get; set; }
+        public int? LeadSourceId { get; set; }
         public string AddressLine1 { get; set; } = string.Empty;
         public string? AddressLine2 { get; set; }
         public int? CityId { get; set; }
@@ -124,8 +126,21 @@ namespace CRM.Server.Models
         public long? CreatedBy { get; set; }
         public DateTime? ConvertedAt { get; set; }
         public string? ConvertedBy { get; set; }
+        public DateTime? ProspectConvertedAt { get; set; }
+        public long? ProspectConvertedBy { get; set; }
+        public DateTime? CustomerConvertedAt { get; set; }
+        public long? CustomerConvertedBy { get; set; }
         /// <summary>Prospect funnel stage (e.g. New, Contacted) for /pipeline.</summary>
         public string? PipelineStatus { get; set; }
+        public bool ProductFeaturesDiscussed { get; set; }
+        public long? AssignedRepresentativeId { get; set; }
+        public int? InteractionModeId { get; set; }
+        public bool PricePlanSelected { get; set; }
+        public bool QuotationPreparedSent { get; set; }
+        public bool QuotationAccepted { get; set; }
+        public bool AdvancePaymentReceived { get; set; }
+        public bool InvoiceGenerated { get; set; }
+        public string? InvoiceNumber { get; set; }
         public DateTime ModifiedAt { get; set; }
         public long? ModifiedBy { get; set; }
 
@@ -141,7 +156,7 @@ namespace CRM.Server.Models
 
     public class CustomerTimeline : BaseTimeline
     {
-        public int CustomerId { get; set; }
+        public string CustomerCode { get; set; } = string.Empty;
         public virtual Customer? Customer { get; set; }
     }
 
@@ -149,15 +164,17 @@ namespace CRM.Server.Models
     public class Service
     {
         public int Id { get; set; }
-        public int CustomerId { get; set; }
+        public string CustomerCode { get; set; } = string.Empty;
         public int? LocationId { get; set; }
         public int? TradeNameId { get; set; }
         public int ServiceTypeId { get; set; }
         public int? FrequencyId { get; set; }
-        public int DueDate { get; set; }
+        public DateTime DueDate { get; set; }
         public DateTime? LiveDate { get; set; }
         public decimal? ServiceValue { get; set; }
         public int DueMonth { get; set; }
+        public decimal? AmcPercentage { get; set; }
+        public decimal? AmcAmount { get; set; }
         public bool ImplementationRequired { get; set; }
         public ImplementationWorkflowStatus ImplementationStatus { get; set; } = ImplementationWorkflowStatus.OPEN;
         public int? ImplementationStageId { get; set; }
@@ -188,7 +205,7 @@ namespace CRM.Server.Models
     {
         public int Id { get; set; }
         public string InvoiceNumber { get; set; } = string.Empty;
-        public int CustomerId { get; set; }
+        public string CustomerCode { get; set; } = string.Empty;
         public int ServiceId { get; set; }
         public int? StaffId { get; set; }
         public int PaymentModeId { get; set; }
@@ -208,6 +225,7 @@ namespace CRM.Server.Models
         public virtual Customer? Customer { get; set; }
         public virtual Service? Service { get; set; }
         public virtual ICollection<InvoiceTimeline> Timelines { get; set; } = new List<InvoiceTimeline>();
+        public virtual ICollection<Payment> Payments { get; set; } = new List<Payment>();
     }
 
     public class InvoiceTimeline : BaseTimeline
@@ -216,13 +234,40 @@ namespace CRM.Server.Models
         public virtual Invoice? Invoice { get; set; }
     }
 
+    // ========== Payments ==========
+    public class Payment
+    {
+        public int Id { get; set; }
+        public int InvoiceId { get; set; }
+        public string CustomerCode { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public decimal Remaining { get; set; }
+        public int PaymentModeId { get; set; }
+        public DateTime ReceivedAt { get; set; }
+        public string? Notes { get; set; }
+        public bool IsActive { get; set; } = true;
+        public DateTime CreatedAt { get; set; }
+        public long? CreatedBy { get; set; }
+        public DateTime ModifiedAt { get; set; }
+        public long? ModifiedBy { get; set; }
+
+        public virtual Invoice? Invoice { get; set; }
+    }
+
     // ========== Investment ==========
     public class Investment
     {
         public int Id { get; set; }
-        public int CustomerId { get; set; }
+        public string CustomerCode { get; set; } = string.Empty;
         public int LocationId { get; set; }
         public decimal Amount { get; set; }
+        public decimal ClaimedAmount { get; set; }
+        public decimal RemainingAmount { get; set; }
+        public bool ClaimedFully { get; set; }
+        public DateTime? ClaimedAt { get; set; }
+        public long? ClaimedBy { get; set; }
+        public string? ClaimNotes { get; set; }
+        public bool NeedsClaim { get; set; } = true;
         public int InvestmentTypeId { get; set; }
         public int? StaffId { get; set; }
         public string Notes { get; set; } = string.Empty;
@@ -241,6 +286,7 @@ namespace CRM.Server.Models
         public int InvestmentId { get; set; }
         public virtual Investment? Investment { get; set; }
     }
+
 
     // ========== Implementation ==========
     public class ImplementationAssignment
@@ -265,10 +311,12 @@ namespace CRM.Server.Models
     public class Ticket
     {
         public int Id { get; set; }
-        public int CustomerId { get; set; }
+        public string CustomerCode { get; set; } = string.Empty;
         public int LocationId { get; set; }
         public string Subject { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
+        public string? ContactPerson { get; set; }
+        public string? ContactMobile { get; set; }
         public TicketStatus Status { get; set; }
         public TicketPriority Priority { get; set; }
         public int AssignedTo { get; set; }
@@ -362,7 +410,7 @@ namespace CRM.Server.Models
     public class Trademark
     {
         public int Id { get; set; }
-        public int CustomerId { get; set; }
+        public string CustomerCode { get; set; } = string.Empty;
         public int LocationId { get; set; }
         public string RegName { get; set; } = string.Empty;
         public string GstNumber { get; set; } = string.Empty;
@@ -390,13 +438,14 @@ namespace CRM.Server.Models
         public long? ModifiedBy { get; set; }
 
         public virtual Customer? Customer { get; set; }
+        public virtual Location? Location { get; set; }
     }
 
     // ========== Location (formerly Branch) ==========
     public class Location
     {
         public int Id { get; set; }
-        public int CustomerId { get; set; }
+        public string CustomerCode { get; set; } = string.Empty;
         public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string RegName { get; set; } = string.Empty;

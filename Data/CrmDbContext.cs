@@ -14,6 +14,7 @@ namespace CRM.Server.Data
         public DbSet<Service> Services { get; set; } = null!;
         public DbSet<Invoice> Invoices { get; set; } = null!;
         public DbSet<InvoiceTimeline> InvoiceTimelines { get; set; } = null!;
+        public DbSet<Payment> Payments { get; set; } = null!;
         public DbSet<Investment> Investments { get; set; } = null!;
         public DbSet<InvestmentTimeline> InvestmentTimelines { get; set; } = null!;
         public DbSet<ImplementationAssignment> ImplementationAssignments { get; set; } = null!;
@@ -53,18 +54,37 @@ namespace CRM.Server.Data
 
             modelBuilder.Entity<Customer>(e =>
             {
+                e.Property(c => c.Code).HasMaxLength(100).IsRequired();
+                e.HasAlternateKey(c => c.Code);
+
+                // Store list fields as comma-separated TEXT; write NULL for empty lists.
+                // Also configure a ValueComparer so EF can detect changes reliably.
+                var stringListComparer = new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<string>>(
+                    (a, b) => ReferenceEquals(a, b) || (a != null && b != null && a.SequenceEqual(b)),
+                    v => v == null ? 0 : v.Aggregate(0, (h, s) => HashCode.Combine(h, s)),
+                    v => v == null ? new List<string>() : v.ToList());
+
                 e.Property(c => c.ContactPersons)
                     .HasConversion(
-                        v => string.Join(",", v),
-                        v => v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList());
+                        v => v == null || v.Count == 0 ? null : string.Join(",", v),
+                        v => string.IsNullOrWhiteSpace(v) ? new List<string>() : v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList())
+                    .IsRequired(false)
+                    .Metadata.SetValueComparer(stringListComparer);
+
                 e.Property(c => c.Emails)
                     .HasConversion(
-                        v => string.Join(",", v),
-                        v => v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList());
+                        v => v == null || v.Count == 0 ? null : string.Join(",", v),
+                        v => string.IsNullOrWhiteSpace(v) ? new List<string>() : v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList())
+                    .IsRequired(false)
+                    .Metadata.SetValueComparer(stringListComparer);
+
                 e.Property(c => c.Mobiles)
                     .HasConversion(
-                        v => string.Join(",", v),
-                        v => v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList());
+                        v => v == null || v.Count == 0 ? null : string.Join(",", v),
+                        v => string.IsNullOrWhiteSpace(v) ? new List<string>() : v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList())
+                    .IsRequired(false)
+                    .Metadata.SetValueComparer(stringListComparer);
+
                 e.HasOne(c => c.TypeRef)
                     .WithMany()
                     .HasForeignKey(c => c.TypeId)
@@ -74,13 +94,15 @@ namespace CRM.Server.Data
             modelBuilder.Entity<CustomerTimeline>()
                 .HasOne(ct => ct.Customer)
                 .WithMany(c => c.Timelines)
-                .HasForeignKey(ct => ct.CustomerId)
+                .HasForeignKey(ct => ct.CustomerCode)
+                .HasPrincipalKey(c => c.Code)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<Service>()
                 .HasOne(s => s.Customer)
                 .WithMany(c => c.Services)
-                .HasForeignKey(s => s.CustomerId)
+                .HasForeignKey(s => s.CustomerCode)
+                .HasPrincipalKey(c => c.Code)
                 .OnDelete(DeleteBehavior.Cascade);
             modelBuilder.Entity<Service>()
                 .Property(s => s.ImplementationStatus)
@@ -91,7 +113,8 @@ namespace CRM.Server.Data
             modelBuilder.Entity<Invoice>()
                 .HasOne(i => i.Customer)
                 .WithMany(c => c.Invoices)
-                .HasForeignKey(i => i.CustomerId)
+                .HasForeignKey(i => i.CustomerCode)
+                .HasPrincipalKey(c => c.Code)
                 .OnDelete(DeleteBehavior.Cascade);
             modelBuilder.Entity<Invoice>()
                 .HasOne(i => i.Service)
@@ -105,10 +128,22 @@ namespace CRM.Server.Data
                 .HasForeignKey(it => it.InvoiceId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            modelBuilder.Entity<Payment>(e =>
+            {
+                e.ToTable("payments");
+                e.Property(p => p.CustomerCode).HasMaxLength(100).IsRequired();
+                e.Property(p => p.Notes).HasMaxLength(500);
+                e.HasOne(p => p.Invoice)
+                    .WithMany(i => i.Payments)
+                    .HasForeignKey(p => p.InvoiceId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
             modelBuilder.Entity<Investment>()
                 .HasOne(inv => inv.Customer)
                 .WithMany(c => c.Investments)
-                .HasForeignKey(inv => inv.CustomerId)
+                .HasForeignKey(inv => inv.CustomerCode)
+                .HasPrincipalKey(c => c.Code)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<InvestmentTimeline>()
@@ -116,6 +151,12 @@ namespace CRM.Server.Data
                 .WithMany(inv => inv.Timelines)
                 .HasForeignKey(invt => invt.InvestmentId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Investment>(e =>
+            {
+                e.ToTable("investments");
+                e.Property(x => x.ClaimNotes).HasMaxLength(500);
+            });
 
             modelBuilder.Entity<ImplementationAssignment>()
                 .HasOne(ia => ia.Service)
@@ -143,7 +184,8 @@ namespace CRM.Server.Data
             {
                 e.HasOne(t => t.Customer)
                     .WithMany(c => c.Tickets)
-                    .HasForeignKey(t => t.CustomerId)
+                    .HasForeignKey(t => t.CustomerCode)
+                    .HasPrincipalKey(c => c.Code)
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
@@ -171,7 +213,13 @@ namespace CRM.Server.Data
             modelBuilder.Entity<Trademark>()
                 .HasOne(t => t.Customer)
                 .WithMany(c => c.Trademarks)
-                .HasForeignKey(t => t.CustomerId)
+                .HasForeignKey(t => t.CustomerCode)
+                .HasPrincipalKey(c => c.Code)
+                .OnDelete(DeleteBehavior.Cascade);
+            modelBuilder.Entity<Trademark>()
+                .HasOne(t => t.Location)
+                .WithMany()
+                .HasForeignKey(t => t.LocationId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<Location>()
@@ -190,9 +238,12 @@ namespace CRM.Server.Data
                     v => string.Join(",", v),
                     v => v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList());
             modelBuilder.Entity<Location>()
+                .Property(b => b.CustomerCode).HasMaxLength(100);
+            modelBuilder.Entity<Location>()
                 .HasOne(b => b.Customer)
                 .WithMany(c => c.Locations)
-                .HasForeignKey(b => b.CustomerId)
+                .HasForeignKey(b => b.CustomerCode)
+                .HasPrincipalKey(c => c.Code)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<LocationTimeline>()

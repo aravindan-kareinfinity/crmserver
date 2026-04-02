@@ -8,6 +8,8 @@
     <AssemblyName>CRM.Server</AssemblyName>
     <!-- Set false to skip npm (uses existing wwwroot if present): dotnet publish -p:BuildSpaOnPublish=false -->
     <BuildSpaOnPublish Condition="'$(BuildSpaOnPublish)' == ''">true</BuildSpaOnPublish>
+    <!-- npm ci wipes node_modules and often fails on Windows (EPERM unlink .node) if Vite/antivirus holds files; install updates in place. -->
+    <SpaNpmInstallArgs Condition="'$(SpaNpmInstallArgs)' == ''">install --legacy-peer-deps</SpaNpmInstallArgs>
     <SpaRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..\core-crm-suite'))</SpaRoot>
     <WwwRootDir>$(MSBuildProjectDirectory)\wwwroot</WwwRootDir>
     <!-- VS/MSBuild often runs Exec without a shell; on Windows `npm` is npm.cmd — use cmd.exe so PATH resolves. -->
@@ -30,7 +32,7 @@
 
   <Target Name="BuildSpa" BeforeTargets="ComputeFilesToPublish" Condition="'$(BuildSpaOnPublish)' == 'true'">
     <Error Condition="!Exists('$(SpaRoot)package.json')" Text="SPA not found: $(SpaRoot)package.json" />
-    <Exec Command="$(_SpaNpmPrefix)npm ci --legacy-peer-deps" WorkingDirectory="$(SpaRoot)" ConsoleToMSBuild="true" />
+    <Exec Command="$(_SpaNpmPrefix)npm $(SpaNpmInstallArgs)" WorkingDirectory="$(SpaRoot)" ConsoleToMSBuild="true" />
     <Exec Command="$(_SpaNpmPrefix)npm run build" WorkingDirectory="$(SpaRoot)" ConsoleToMSBuild="true" />
     <ItemGroup>
       <_SpaOut Include="$(SpaRoot)dist\**\*" />

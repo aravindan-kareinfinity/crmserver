@@ -12,6 +12,7 @@ namespace CRM.Server.Services
         Task<ApiResponse<List<InvoiceResponseDto>>> GetAll();
         Task<ApiResponse<InvoiceResponseDto>> GetById(int id);
         Task<ApiResponse<List<InvoiceResponseDto>>> GetInvoicesByCustomer(int customerId);
+        Task<ApiResponse<List<InvoiceResponseDto>>> GetInvoicesByCustomerCode(string customerCode);
         Task<ApiResponse<List<InvoiceResponseDto>>> GetByStaffId(int staffId);
         Task<ApiResponse<InvoiceResponseDto>> CreateInvoice(CreateInvoiceDto dto);
         Task<ApiResponse<InvoiceResponseDto>> UpdateInvoice(int id, UpdateInvoiceDto dto);
@@ -69,25 +70,73 @@ namespace CRM.Server.Services
             return dict;
         }
 
+        private async Task EnrichInvoicesAsync(List<InvoiceResponseDto> rows)
+        {
+            await EntityCodeResolution.EnrichInvoiceDtosAsync(_context, rows);
+        }
+
+        /// <summary>
+        /// Keep customer sales milestone flags in sync with invoice/payment activity.
+        /// - Any invoice created => InvoiceGenerated = true
+        /// - Any received amount > 0 => AdvancePaymentReceived = true
+        /// </summary>
+        private async Task SyncCustomerSalesFlagsFromInvoiceAsync(string customerCode, string invoiceNumber, decimal received)
+        {
+            if (string.IsNullOrWhiteSpace(customerCode)) return;
+            var cust = await _context.Customers.FirstOrDefaultAsync(c => c.Code == customerCode);
+            if (cust == null) return;
+
+            var changed = false;
+            if (!cust.InvoiceGenerated)
+            {
+                cust.InvoiceGenerated = true;
+                changed = true;
+            }
+            var invNo = string.IsNullOrWhiteSpace(invoiceNumber) ? null : invoiceNumber.Trim();
+            if (invNo != null && cust.InvoiceNumber != invNo)
+            {
+                cust.InvoiceNumber = invNo;
+                changed = true;
+            }
+            if (received > 0 && !cust.AdvancePaymentReceived)
+            {
+                cust.AdvancePaymentReceived = true;
+                changed = true;
+            }
+            if (changed)
+            {
+                cust.ModifiedAt = DateTime.UtcNow;
+                cust.ModifiedBy = AuditUserIds.System;
+                await _context.SaveChangesAsync();
+            }
+        }
+
         private InvoiceResponseDto MapInvoice(Invoice i, IReadOnlyDictionary<long, string>? createdByLookup = null)
         {
             string? createdByName = null;
             if (i.CreatedBy is long cid && cid > 0 && createdByLookup != null && createdByLookup.TryGetValue(cid, out var resolved))
                 createdByName = resolved;
 
+            static string NormalizeInfinity(DateTime dt)
+            {
+                // Npgsql maps PostgreSQL +/-infinity to DateTime.MinValue/MaxValue by default.
+                if (dt == DateTime.MinValue || dt == DateTime.MaxValue) return "";
+                return dt.ToString("O");
+            }
+
             return new InvoiceResponseDto
             {
                 Id = i.Id,
                 InvoiceNumber = i.InvoiceNumber,
-                CustomerId = i.CustomerId,
+                CustomerId = i.Customer?.Id ?? 0,
                 ServiceId = i.ServiceId,
                 StaffId = i.StaffId,
                 PaymentModeId = i.PaymentModeId,
                 PaymentStatusId = i.PaymentStatusId,
                 Receivable = i.Receivable,
                 Received = i.Received,
-                SubscriptionStartAt = i.SubscriptionStartAt,
-                SubscriptionEndAt = i.SubscriptionEndAt,
+                SubscriptionStartAt = NormalizeInfinity(i.SubscriptionStartAt),
+                SubscriptionEndAt = NormalizeInfinity(i.SubscriptionEndAt),
                 IsActive = i.IsActive,
                 CreatedAt = i.CreatedAt,
                 CreatedBy = i.CreatedBy,
@@ -115,15 +164,17 @@ namespace CRM.Server.Services
             try
             {
                 var total = await _context.Invoices.CountAsync();
-                var items = await _context.Invoices.OrderByDescending(i => i.CreatedAt)
+                var items = await _context.Invoices.Include(i => i.Customer).OrderByDescending(i => i.CreatedAt)
                     .Skip((pageNumber - 1) * pageSize).Take(pageSize).ToListAsync();
                 var createdByLookup = await ResolveUserDisplayNamesByIdAsync(items.Select(i => i.CreatedBy));
+                var invDtos = items.Select(i => MapInvoice(i, createdByLookup)).ToList();
+                await EnrichInvoicesAsync(invDtos);
                 return new ApiResponse<PaginatedResponse<InvoiceResponseDto>>
                 {
                     Success = true,
                     Data = new PaginatedResponse<InvoiceResponseDto>
                     {
-                        Items = items.Select(i => MapInvoice(i, createdByLookup)).ToList(),
+                        Items = invDtos,
                         Total = total,
                         PageNumber = pageNumber,
                         PageSize = pageSize
@@ -140,9 +191,11 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Invoices.OrderByDescending(i => i.CreatedAt).ToListAsync();
+                var list = await _context.Invoices.Include(i => i.Customer).OrderByDescending(i => i.CreatedAt).ToListAsync();
                 var createdByLookup = await ResolveUserDisplayNamesByIdAsync(list.Select(i => i.CreatedBy));
-                return new ApiResponse<List<InvoiceResponseDto>> { Success = true, Data = list.Select(i => MapInvoice(i, createdByLookup)).ToList() };
+                var invDtos = list.Select(i => MapInvoice(i, createdByLookup)).ToList();
+                await EnrichInvoicesAsync(invDtos);
+                return new ApiResponse<List<InvoiceResponseDto>> { Success = true, Data = invDtos };
             }
             catch (Exception ex)
             {
@@ -154,10 +207,12 @@ namespace CRM.Server.Services
         {
             try
             {
-                var i = await _context.Invoices.FindAsync(id);
+                var i = await _context.Invoices.Include(x => x.Customer).FirstOrDefaultAsync(x => x.Id == id);
                 if (i == null) return new ApiResponse<InvoiceResponseDto> { Success = false, Message = "Invoice not found" };
                 var createdByLookup = await ResolveUserDisplayNamesByIdAsync(new[] { i.CreatedBy });
-                return new ApiResponse<InvoiceResponseDto> { Success = true, Data = MapInvoice(i, createdByLookup) };
+                var one = MapInvoice(i, createdByLookup);
+                await EnrichInvoicesAsync(new List<InvoiceResponseDto> { one });
+                return new ApiResponse<InvoiceResponseDto> { Success = true, Data = one };
             }
             catch (Exception ex)
             {
@@ -169,9 +224,29 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Invoices.Where(i => i.CustomerId == customerId).OrderByDescending(i => i.CreatedAt).ToListAsync();
+                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(_context, customerId);
+                if (string.IsNullOrEmpty(cc))
+                    return new ApiResponse<List<InvoiceResponseDto>> { Success = true, Data = new List<InvoiceResponseDto>() };
+                var list = await _context.Invoices.Include(i => i.Customer).Where(i => i.CustomerCode == cc).OrderByDescending(i => i.CreatedAt).ToListAsync();
                 var createdByLookup = await ResolveUserDisplayNamesByIdAsync(list.Select(i => i.CreatedBy));
-                return new ApiResponse<List<InvoiceResponseDto>> { Success = true, Data = list.Select(i => MapInvoice(i, createdByLookup)).ToList() };
+                var invDtos = list.Select(i => MapInvoice(i, createdByLookup)).ToList();
+                await EnrichInvoicesAsync(invDtos);
+                return new ApiResponse<List<InvoiceResponseDto>> { Success = true, Data = invDtos };
+            }
+            catch (Exception ex)
+            {
+                return new ApiResponse<List<InvoiceResponseDto>> { Success = false, Message = ex.Message };
+            }
+        }
+
+        public async Task<ApiResponse<List<InvoiceResponseDto>>> GetInvoicesByCustomerCode(string customerCode)
+        {
+            try
+            {
+                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(_context, 0, customerCode);
+                if (err != null)
+                    return new ApiResponse<List<InvoiceResponseDto>> { Success = false, Message = err };
+                return await GetInvoicesByCustomer(cid);
             }
             catch (Exception ex)
             {
@@ -183,9 +258,11 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Invoices.Where(i => i.StaffId == staffId).OrderByDescending(i => i.CreatedAt).ToListAsync();
+                var list = await _context.Invoices.Include(i => i.Customer).Where(i => i.StaffId == staffId).OrderByDescending(i => i.CreatedAt).ToListAsync();
                 var createdByLookup = await ResolveUserDisplayNamesByIdAsync(list.Select(i => i.CreatedBy));
-                return new ApiResponse<List<InvoiceResponseDto>> { Success = true, Data = list.Select(i => MapInvoice(i, createdByLookup)).ToList() };
+                var invDtos = list.Select(i => MapInvoice(i, createdByLookup)).ToList();
+                await EnrichInvoicesAsync(invDtos);
+                return new ApiResponse<List<InvoiceResponseDto>> { Success = true, Data = invDtos };
             }
             catch (Exception ex)
             {
@@ -197,6 +274,10 @@ namespace CRM.Server.Services
         {
             try
             {
+                var (custCode, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, dto.CustomerId, dto.CustomerCode);
+                if (cErr != null)
+                    return new ApiResponse<InvoiceResponseDto> { Success = false, Message = cErr };
+
                 var now = DateTime.UtcNow;
                 var staffId = dto.StaffId;
                 if (!staffId.HasValue && dto.ServiceId > 0)
@@ -210,7 +291,7 @@ namespace CRM.Server.Services
                 var invoice = new Invoice
                 {
                     InvoiceNumber = dto.InvoiceNumber,
-                    CustomerId = dto.CustomerId,
+                    CustomerCode = custCode,
                     ServiceId = dto.ServiceId,
                     StaffId = staffId,
                     PaymentModeId = dto.PaymentModeId,
@@ -227,8 +308,15 @@ namespace CRM.Server.Services
                 };
                 _context.Invoices.Add(invoice);
                 await _context.SaveChangesAsync();
+
+                // Customer milestone flags (invoice/payment)
+                await SyncCustomerSalesFlagsFromInvoiceAsync(custCode, invoice.InvoiceNumber, invoice.Received);
+
+                await _context.Entry(invoice).Reference(x => x.Customer).LoadAsync();
                 var createLookup = await ResolveUserDisplayNamesByIdAsync(new[] { invoice.CreatedBy });
-                return new ApiResponse<InvoiceResponseDto> { Success = true, Data = MapInvoice(invoice, createLookup) };
+                var created = MapInvoice(invoice, createLookup);
+                await EnrichInvoicesAsync(new List<InvoiceResponseDto> { created });
+                return new ApiResponse<InvoiceResponseDto> { Success = true, Data = created };
             }
             catch (Exception ex)
             {
@@ -253,8 +341,15 @@ namespace CRM.Server.Services
                 i.ModifiedAt = DateTime.UtcNow;
                 i.ModifiedBy = AuditUserIds.System;
                 await _context.SaveChangesAsync();
+
+                // Customer milestone flags (payment)
+                await SyncCustomerSalesFlagsFromInvoiceAsync(i.CustomerCode, i.InvoiceNumber, i.Received);
+
+                await _context.Entry(i).Reference(x => x.Customer).LoadAsync();
                 var updateLookup = await ResolveUserDisplayNamesByIdAsync(new[] { i.CreatedBy });
-                return new ApiResponse<InvoiceResponseDto> { Success = true, Data = MapInvoice(i, updateLookup) };
+                var updated = MapInvoice(i, updateLookup);
+                await EnrichInvoicesAsync(new List<InvoiceResponseDto> { updated });
+                return new ApiResponse<InvoiceResponseDto> { Success = true, Data = updated };
             }
             catch (Exception ex)
             {

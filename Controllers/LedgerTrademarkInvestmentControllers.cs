@@ -36,6 +36,18 @@ namespace CRM.Server.Controllers
             return Ok(result);
         }
 
+        [HttpGet("customer/by-code")]
+        public async Task<ActionResult<ApiResponse<PaginatedResponse<TrademarkResponseDto>>>> GetTrademarksByCustomerCode(
+            [FromQuery] string customerCode,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10)
+        {
+            var result = await _trademarkService.GetTrademarksByCustomerCode(customerCode, pageNumber, pageSize);
+            if (!result.Success)
+                return BadRequest(result);
+            return Ok(result);
+        }
+
         [HttpGet("active/{isActive:bool}")]
         public async Task<ActionResult<ApiResponse<List<TrademarkResponseDto>>>> GetTrademarksByActive(bool isActive)
         {
@@ -111,10 +123,27 @@ namespace CRM.Server.Controllers
             return Ok(result);
         }
 
+        [HttpGet("customer/by-code/total")]
+        public async Task<ActionResult<ApiResponse<decimal>>> GetTotalInvestmentByCustomerCode([FromQuery] string customerCode)
+        {
+            var result = await _investmentService.GetTotalInvestmentByCustomerCode(customerCode);
+            if (!result.Success)
+                return BadRequest(result);
+            return Ok(result);
+        }
+
         [HttpGet("customer/{customerId}/list")]
         public async Task<ActionResult<ApiResponse<List<InvestmentResponseDto>>>> GetByCustomerIdList(int customerId)
         {
             var result = await _investmentService.GetByCustomerId(customerId);
+            if (!result.Success) return BadRequest(result);
+            return Ok(result);
+        }
+
+        [HttpGet("customer/by-code/list")]
+        public async Task<ActionResult<ApiResponse<List<InvestmentResponseDto>>>> GetInvestmentsListByCustomerCode([FromQuery] string customerCode)
+        {
+            var result = await _investmentService.GetByCustomerCode(customerCode);
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }
@@ -126,6 +155,18 @@ namespace CRM.Server.Controllers
             [FromQuery] int pageSize = 10)
         {
             var result = await _investmentService.GetInvestmentsByCustomer(customerId, pageNumber, pageSize);
+            if (!result.Success)
+                return BadRequest(result);
+            return Ok(result);
+        }
+
+        [HttpGet("customer/by-code")]
+        public async Task<ActionResult<ApiResponse<PaginatedResponse<InvestmentResponseDto>>>> GetInvestmentsByCustomerCode(
+            [FromQuery] string customerCode,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10)
+        {
+            var result = await _investmentService.GetInvestmentsByCustomerCode(customerCode, pageNumber, pageSize);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -160,6 +201,52 @@ namespace CRM.Server.Controllers
         public async Task<ActionResult<ApiResponse<InvestmentTimelineEntryDto>>> AddTimelineEntry(int id, AddTimelineEntryDto dto)
         {
             var result = await _investmentService.AddTimelineEntry(id, dto);
+            if (!result.Success) return BadRequest(result);
+            return Ok(result);
+        }
+
+        [HttpPost("{id:int}/claim")]
+        public async Task<ActionResult<ApiResponse<InvestmentResponseDto>>> Claim(int id, ClaimInvestmentDto dto)
+        {
+            dto.InvestmentId = id;
+            var result = await _investmentService.ClaimInvestment(dto);
+            if (!result.Success) return BadRequest(result);
+            return Ok(result);
+        }
+
+        [HttpGet("claims/summary")]
+        public async Task<ActionResult<ApiResponse<List<InvestmentClaimSummaryDto>>>> GetClaimSummary(
+            [FromQuery] string startDate,
+            [FromQuery] string endDate,
+            [FromQuery] long? userId)
+        {
+            if (!DateTime.TryParse(startDate, out var start))
+                return BadRequest(new ApiResponse<List<InvestmentClaimSummaryDto>> { Success = false, Message = "Invalid startDate" });
+            if (!DateTime.TryParse(endDate, out var end))
+                return BadRequest(new ApiResponse<List<InvestmentClaimSummaryDto>> { Success = false, Message = "Invalid endDate" });
+            // include full end day
+            var startUtc = DateTime.SpecifyKind(start, DateTimeKind.Utc);
+            var endUtc = DateTime.SpecifyKind(end, DateTimeKind.Utc).AddDays(1).AddTicks(-1);
+
+            var result = await _investmentService.GetClaimSummary(startUtc, endUtc, userId);
+            if (!result.Success) return BadRequest(result);
+            return Ok(result);
+        }
+
+        [HttpGet("claims/list")]
+        public async Task<ActionResult<ApiResponse<List<InvestmentClaimRowDto>>>> GetClaimRows(
+            [FromQuery] string startDate,
+            [FromQuery] string endDate,
+            [FromQuery] long? userId)
+        {
+            if (!DateTime.TryParse(startDate, out var start))
+                return BadRequest(new ApiResponse<List<InvestmentClaimRowDto>> { Success = false, Message = "Invalid startDate" });
+            if (!DateTime.TryParse(endDate, out var end))
+                return BadRequest(new ApiResponse<List<InvestmentClaimRowDto>> { Success = false, Message = "Invalid endDate" });
+            var startUtc = DateTime.SpecifyKind(start, DateTimeKind.Utc);
+            var endUtc = DateTime.SpecifyKind(end, DateTimeKind.Utc).AddDays(1).AddTicks(-1);
+
+            var result = await _investmentService.GetClaimRows(startUtc, endUtc, userId);
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }

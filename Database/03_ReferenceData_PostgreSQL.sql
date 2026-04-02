@@ -31,6 +31,11 @@ INSERT INTO reference_entries (category, label, value, is_active, sort_order) VA
 ('Country', 'India', 'india', true, 1),
 ('Country', 'USA', 'usa', true, 2);
 
+INSERT INTO reference_entries (category, label, value, is_active, sort_order) VALUES
+('Interaction Mode', 'Call', 'call', true, 1),
+('Interaction Mode', 'Visit', 'visit', true, 2),
+('Interaction Mode', 'Demo', 'demo', true, 3);
+
 INSERT INTO reference_entries (category, label, value, is_active, sort_order, requires_implementation) VALUES
 ('Service Type', 'SaaS', 'saas', true, 1, true),
 ('Service Type', 'ERP', 'erp', true, 2, true),
@@ -123,9 +128,10 @@ INSERT INTO reference_entries (category, label, value, is_active, sort_order) VA
 ('Ticket Category', 'Billing', 'billing', true, 4);
 
 INSERT INTO reference_entries (category, label, value, is_active, sort_order) VALUES
-('Lead Source', 'Website', 'website', true, 1),
-('Lead Source', 'Referral', 'referral', true, 2),
-('Lead Source', 'Webinar', 'webinar', true, 3);
+('Lead Source', 'External', 'external', true, 1),
+('Lead Source', 'Internal', 'internal', true, 2),
+('Lead Source', 'Exhibition / Fair', 'exhibition_fair', true, 3),
+('Lead Source', 'Social Media Campaign', 'social_media_campaign', true, 4);
 
 INSERT INTO reference_entries (category, label, value, is_active, sort_order) VALUES
 ('Customer Type', 'Lead', 'lead', true, 1),

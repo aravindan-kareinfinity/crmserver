@@ -8,6 +8,8 @@ namespace CRM.Server.DTOs
         public string Email { get; set; } = string.Empty;
         public int? BusinessTypeId { get; set; }
         public int? IndustryId { get; set; }
+        /// <summary>FK to reference_entries (category "Lead Source").</summary>
+        public int? LeadSourceId { get; set; }
         public string AddressLine1 { get; set; } = string.Empty;
         public string? AddressLine2 { get; set; }
         public int? CityId { get; set; }
@@ -22,6 +24,17 @@ namespace CRM.Server.DTOs
         public int TierId { get; set; }
         /// <summary>FK to reference_entries (e.g. customer type: lead/prospect/customer).</summary>
         public int TypeId { get; set; }
+        /// <summary>Authenticated user performing this create (stored in <c>created_by</c> / <c>modified_by</c> as user id).</summary>
+        public long? CreatedByUserId { get; set; }
+        public bool? ProductFeaturesDiscussed { get; set; }
+        public long? AssignedRepresentativeId { get; set; }
+        public int? InteractionModeId { get; set; }
+        public bool? PricePlanSelected { get; set; }
+        public bool? QuotationPreparedSent { get; set; }
+        public bool? QuotationAccepted { get; set; }
+        public bool? AdvancePaymentReceived { get; set; }
+        public bool? InvoiceGenerated { get; set; }
+        public string? InvoiceNumber { get; set; }
     }
 
     /// <summary>Result of <c>POST /api/Customers/bulk</c> (all-or-nothing import).</summary>
@@ -39,6 +52,8 @@ namespace CRM.Server.DTOs
         public string? Email { get; set; }
         public int? BusinessTypeId { get; set; }
         public int? IndustryId { get; set; }
+        /// <summary>FK to reference_entries (category "Lead Source").</summary>
+        public int? LeadSourceId { get; set; }
         public string? AddressLine1 { get; set; }
         public string? AddressLine2 { get; set; }
         public int? CityId { get; set; }
@@ -57,6 +72,17 @@ namespace CRM.Server.DTOs
         public string? ConvertedBy { get; set; }
         /// <summary>Prospect pipeline stage (UI: New, Contacted, …). Empty string clears.</summary>
         public string? PipelineStatus { get; set; }
+        /// <summary>Authenticated user performing this update (stored in <c>modified_by</c> as user id).</summary>
+        public long? ModifiedByUserId { get; set; }
+        public bool? ProductFeaturesDiscussed { get; set; }
+        public long? AssignedRepresentativeId { get; set; }
+        public int? InteractionModeId { get; set; }
+        public bool? PricePlanSelected { get; set; }
+        public bool? QuotationPreparedSent { get; set; }
+        public bool? QuotationAccepted { get; set; }
+        public bool? AdvancePaymentReceived { get; set; }
+        public bool? InvoiceGenerated { get; set; }
+        public string? InvoiceNumber { get; set; }
     }
 
     /// <summary>Aligned with core-crm-suite <c>Customer</c> (types.ts).</summary>
@@ -69,6 +95,7 @@ namespace CRM.Server.DTOs
         public string Email { get; set; } = string.Empty;
         public int? BusinessTypeId { get; set; }
         public int? IndustryId { get; set; }
+        public int? LeadSourceId { get; set; }
         public string AddressLine1 { get; set; } = string.Empty;
         public string? AddressLine2 { get; set; }
         public int? CityId { get; set; }
@@ -93,18 +120,38 @@ namespace CRM.Server.DTOs
         public long? ModifiedBy { get; set; }
         public DateTime? ConvertedAt { get; set; }
         public string? ConvertedBy { get; set; }
+        public DateTime? ProspectConvertedAt { get; set; }
+        public long? ProspectConvertedBy { get; set; }
+        public string? ProspectConvertedByName { get; set; }
+        public DateTime? CustomerConvertedAt { get; set; }
+        public long? CustomerConvertedBy { get; set; }
+        public string? CustomerConvertedByName { get; set; }
         /// <summary>Prospect pipeline stage for /pipeline kanban.</summary>
         public string? PipelineStatus { get; set; }
+        public bool ProductFeaturesDiscussed { get; set; }
+        public long? AssignedRepresentativeId { get; set; }
+        public int? InteractionModeId { get; set; }
+        public bool PricePlanSelected { get; set; }
+        public bool QuotationPreparedSent { get; set; }
+        public bool QuotationAccepted { get; set; }
+        public bool AdvancePaymentReceived { get; set; }
+        public bool InvoiceGenerated { get; set; }
+        public string? InvoiceNumber { get; set; }
     }
 
     // ========== Service DTOs ==========
     public class CreateServiceDto
     {
+        /// <summary>Numeric FK; optional if <see cref="CustomerCode"/> is set.</summary>
         public int CustomerId { get; set; }
+        /// <summary>Stable customer business code (e.g. 2026/0001); takes precedence over <see cref="CustomerId"/> when set.</summary>
+        public string? CustomerCode { get; set; }
         public int ServiceTypeId { get; set; }
         public int? FrequencyId { get; set; }
-        public int DueDate { get; set; }
-        public int DueMonth { get; set; }
+        public DateTime DueDate { get; set; }
+        public int? DueMonth { get; set; }
+        public decimal? AmcPercentage { get; set; }
+        public decimal? AmcAmount { get; set; }
         public bool ImplementationRequired { get; set; }
         /// <summary>1 = Open, 2 = In Progress, 3 = Completed (hardcoded; not reference_entries).</summary>
         public int? ImplementationStatusId { get; set; }
@@ -113,18 +160,23 @@ namespace CRM.Server.DTOs
         public decimal? BudgetAmount { get; set; }
         public string? Notes { get; set; }
         public int? LocationId { get; set; }
+        /// <summary>Location <c>Code</c> for this customer; used when resolving link if preferred over <see cref="LocationId"/>.</summary>
+        public string? LocationCode { get; set; }
         public int? TradeNameId { get; set; }
         public int? TaxId { get; set; }
         /// <summary>Base amount before tax (tax % from <see cref="TaxId"/> reference).</summary>
         public decimal? ServiceValue { get; set; }
+        public DateTime? LiveDate { get; set; }
     }
 
     public class UpdateServiceDto
     {
         public int? ServiceTypeId { get; set; }
         public int? FrequencyId { get; set; }
-        public int? DueDate { get; set; }
+        public DateTime? DueDate { get; set; }
         public int? DueMonth { get; set; }
+        public decimal? AmcPercentage { get; set; }
+        public decimal? AmcAmount { get; set; }
         public bool? ImplementationRequired { get; set; }
         /// <summary>1 = Open, 2 = In Progress, 3 = Completed (hardcoded; not reference_entries).</summary>
         public int? ImplementationStatusId { get; set; }
@@ -132,9 +184,11 @@ namespace CRM.Server.DTOs
         public long? ModifiedByUserId { get; set; }
         public bool? IsActive { get; set; }
         public string? Notes { get; set; }
-        /// <summary>When true, applies <see cref="LocationId"/>, <see cref="TradeNameId"/>, <see cref="TaxId"/>, <see cref="ServiceValue"/> (including nulls).</summary>
+        /// <summary>When true, applies <see cref="LocationId"/>, <see cref="LocationCode"/>, <see cref="TradeNameId"/>, <see cref="TaxId"/>, <see cref="ServiceValue"/> (including nulls).</summary>
         public bool? UpdateBillingLinks { get; set; }
         public int? LocationId { get; set; }
+        /// <summary>When <see cref="UpdateBillingLinks"/> is true, resolves under the service's customer; takes precedence over <see cref="LocationId"/> when set.</summary>
+        public string? LocationCode { get; set; }
         public int? TradeNameId { get; set; }
         public int? TaxId { get; set; }
         public decimal? ServiceValue { get; set; }
@@ -147,18 +201,31 @@ namespace CRM.Server.DTOs
         /// and sets workflow to Open so the project appears on the implementation board.
         /// </summary>
         public bool? BeginImplementation { get; set; }
+        public DateTime? LiveDate { get; set; }
+    }
+
+    public class GoLiveServiceDto
+    {
+        public DateTime LiveDate { get; set; }
+        public long? ModifiedByUserId { get; set; }
     }
 
     public class ServiceResponseDto
     {
         public int Id { get; set; }
         public int CustomerId { get; set; }
+        /// <summary>Stable customer code from <c>customers.code</c>.</summary>
+        public string? CustomerCode { get; set; }
         public int? LocationId { get; set; }
+        /// <summary>Location business code from <c>locations.code</c>.</summary>
+        public string? LocationCode { get; set; }
         public int? TradeNameId { get; set; }
         public int ServiceTypeId { get; set; }
         public int? FrequencyId { get; set; }
-        public int DueDate { get; set; }
+        public DateTime DueDate { get; set; }
         public int DueMonth { get; set; }
+        public decimal? AmcPercentage { get; set; }
+        public decimal? AmcAmount { get; set; }
         public bool ImplementationRequired { get; set; }
         /// <summary>1 = Open, 2 = In Progress, 3 = Completed (hardcoded; not reference_entries).</summary>
         public int? ImplementationStatusId { get; set; }
@@ -178,6 +245,7 @@ namespace CRM.Server.DTOs
         public long? CreatedBy { get; set; }
         public DateTime ModifiedAt { get; set; }
         public long? ModifiedBy { get; set; }
+        public DateTime? LiveDate { get; set; }
     }
 
     // ========== Invoice DTOs ==========
@@ -185,6 +253,7 @@ namespace CRM.Server.DTOs
     {
         public string InvoiceNumber { get; set; } = string.Empty;
         public int CustomerId { get; set; }
+        public string? CustomerCode { get; set; }
         public int ServiceId { get; set; }
         public int? StaffId { get; set; }
         public int PaymentModeId { get; set; }
@@ -201,14 +270,15 @@ namespace CRM.Server.DTOs
         public int Id { get; set; }
         public string InvoiceNumber { get; set; } = string.Empty;
         public int CustomerId { get; set; }
+        public string? CustomerCode { get; set; }
         public int ServiceId { get; set; }
         public int? StaffId { get; set; }
         public int PaymentModeId { get; set; }
         public int PaymentStatusId { get; set; }
         public decimal Receivable { get; set; }
         public decimal Received { get; set; }
-        public DateTime SubscriptionStartAt { get; set; }
-        public DateTime SubscriptionEndAt { get; set; }
+        public string SubscriptionStartAt { get; set; } = string.Empty;
+        public string SubscriptionEndAt { get; set; } = string.Empty;
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
         public long? CreatedBy { get; set; }
@@ -232,13 +302,49 @@ namespace CRM.Server.DTOs
         public string? PaidBy { get; set; }
     }
 
+    // ========== Payment DTOs ==========
+    public class CollectPaymentDto
+    {
+        public int InvoiceId { get; set; }
+        public decimal Amount { get; set; }
+        public int PaymentModeId { get; set; }
+        public DateTime? ReceivedAt { get; set; }
+        public string? Notes { get; set; }
+        /// <summary>Optional user id for attribution (stored as created_by/modified_by on payment; and invoice modified_by).</summary>
+        public long? UserId { get; set; }
+    }
+
+    public class PaymentResponseDto
+    {
+        public int Id { get; set; }
+        public int InvoiceId { get; set; }
+        public string CustomerCode { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public decimal Remaining { get; set; }
+        public int PaymentModeId { get; set; }
+        public DateTime ReceivedAt { get; set; }
+        public string? Notes { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public long? CreatedBy { get; set; }
+    }
+
+    public class CollectPaymentResultDto
+    {
+        public PaymentResponseDto Payment { get; set; } = new();
+        public InvoiceResponseDto Invoice { get; set; } = new();
+    }
+
     // ========== Ticket DTOs ==========
     public class CreateTicketDto
     {
         public int CustomerId { get; set; }
+        public string? CustomerCode { get; set; }
         public int LocationId { get; set; }
+        public string? LocationCode { get; set; }
         public string Subject { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
+        public string? ContactPerson { get; set; }
+        public string? ContactMobile { get; set; }
         public string Priority { get; set; } = "medium";
         public int AssignedTo { get; set; }
         public string Category { get; set; } = string.Empty;
@@ -253,7 +359,9 @@ namespace CRM.Server.DTOs
         public string? Priority { get; set; }
         public int? AssignedTo { get; set; }
         public int? CustomerId { get; set; }
+        public string? CustomerCode { get; set; }
         public int? LocationId { get; set; }
+        public string? LocationCode { get; set; }
         public string? Subject { get; set; }
         public string? Description { get; set; }
         public string? Category { get; set; }
@@ -268,9 +376,13 @@ namespace CRM.Server.DTOs
     {
         public int Id { get; set; }
         public int CustomerId { get; set; }
+        public string? CustomerCode { get; set; }
         public int LocationId { get; set; }
+        public string? LocationCode { get; set; }
         public string Subject { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
+        public string? ContactPerson { get; set; }
+        public string? ContactMobile { get; set; }
         public string Status { get; set; } = string.Empty;
         public string Priority { get; set; } = string.Empty;
         public int AssignedTo { get; set; }
@@ -289,6 +401,7 @@ namespace CRM.Server.DTOs
     public class CreateLocationDto
     {
         public int CustomerId { get; set; }
+        public string? CustomerCode { get; set; }
         public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string RegName { get; set; } = string.Empty;
@@ -312,6 +425,7 @@ namespace CRM.Server.DTOs
     {
         public int Id { get; set; }
         public int CustomerId { get; set; }
+        public string? CustomerCode { get; set; }
         public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string RegName { get; set; } = string.Empty;
@@ -410,6 +524,7 @@ namespace CRM.Server.DTOs
     public class CustomerTimelineEntryDto : TimelineEntryDto
     {
         public int CustomerId { get; set; }
+        public string? CustomerCode { get; set; }
     }
 
     public class LocationTimelineEntryDto : TimelineEntryDto
@@ -568,7 +683,9 @@ namespace CRM.Server.DTOs
     public class CreateTrademarkDto
     {
         public int CustomerId { get; set; }
+        public string? CustomerCode { get; set; }
         public int LocationId { get; set; }
+        public string? LocationCode { get; set; }
         public string RegName { get; set; } = string.Empty;
         public string GstNumber { get; set; } = string.Empty;
         public string Pincode { get; set; } = string.Empty;
@@ -594,7 +711,9 @@ namespace CRM.Server.DTOs
     public class UpdateTrademarkDto
     {
         public int CustomerId { get; set; }
+        public string? CustomerCode { get; set; }
         public int LocationId { get; set; }
+        public string? LocationCode { get; set; }
         public string RegName { get; set; } = string.Empty;
         public string GstNumber { get; set; } = string.Empty;
         public string Pincode { get; set; } = string.Empty;
@@ -621,7 +740,9 @@ namespace CRM.Server.DTOs
     {
         public int Id { get; set; }
         public int CustomerId { get; set; }
+        public string? CustomerCode { get; set; }
         public int LocationId { get; set; }
+        public string? LocationCode { get; set; }
         public string RegName { get; set; } = string.Empty;
         public string GstNumber { get; set; } = string.Empty;
         public string Pincode { get; set; } = string.Empty;
@@ -704,22 +825,28 @@ namespace CRM.Server.DTOs
     public class CreateInvestmentDto
     {
         public int CustomerId { get; set; }
+        public string? CustomerCode { get; set; }
         public int LocationId { get; set; }
+        public string? LocationCode { get; set; }
         public decimal Amount { get; set; }
         public int InvestmentTypeId { get; set; }
         public int? StaffId { get; set; }
+        public bool? NeedsClaim { get; set; }
         public string Notes { get; set; } = string.Empty;
     }
 
     public class UpdateInvestmentDto
     {
         public int? CustomerId { get; set; }
+        public string? CustomerCode { get; set; }
         public int? LocationId { get; set; }
+        public string? LocationCode { get; set; }
         public int? InvestmentTypeId { get; set; }
         public decimal? Amount { get; set; }
         public int? StaffId { get; set; }
         /// <summary>When true, clears <see cref="StaffId"/> (ignores <see cref="StaffId"/> value).</summary>
         public bool? StaffIdCleared { get; set; }
+        public bool? NeedsClaim { get; set; }
         public string? Notes { get; set; }
         public bool? IsActive { get; set; }
     }
@@ -728,8 +855,17 @@ namespace CRM.Server.DTOs
     {
         public int Id { get; set; }
         public int CustomerId { get; set; }
+        public string? CustomerCode { get; set; }
         public int LocationId { get; set; }
+        public string? LocationCode { get; set; }
         public decimal Amount { get; set; }
+        public decimal ClaimedAmount { get; set; }
+        public decimal RemainingAmount { get; set; }
+        public bool ClaimedFully { get; set; }
+        public DateTime? ClaimedAt { get; set; }
+        public long? ClaimedBy { get; set; }
+        public string? ClaimNotes { get; set; }
+        public bool NeedsClaim { get; set; }
         public int InvestmentTypeId { get; set; }
         public int? StaffId { get; set; }
         public string Notes { get; set; } = string.Empty;
@@ -737,6 +873,34 @@ namespace CRM.Server.DTOs
         public DateTime CreatedAt { get; set; }
         public long? CreatedBy { get; set; }
         public DateTime ModifiedAt { get; set; }
+    }
+
+    public class ClaimInvestmentDto
+    {
+        public int InvestmentId { get; set; }
+        public DateTime? ClaimedAt { get; set; }
+        public string? Notes { get; set; }
+        public long? UserId { get; set; }
+    }
+
+    public class InvestmentClaimSummaryDto
+    {
+        public long? UserId { get; set; }
+        public int Count { get; set; }
+        public decimal TotalAmount { get; set; }
+    }
+
+    public class InvestmentClaimRowDto
+    {
+        public int InvestmentId { get; set; }
+        public string CustomerCode { get; set; } = string.Empty;
+        public int LocationId { get; set; }
+        public decimal Amount { get; set; }
+        public DateTime ClaimedAt { get; set; }
+        public long? ClaimedBy { get; set; }
+        public string? ClaimNotes { get; set; }
+        public int InvestmentTypeId { get; set; }
+        public int? StaffId { get; set; }
     }
 
     // ========== Reports (saved SQL + run with bound dates) ==========

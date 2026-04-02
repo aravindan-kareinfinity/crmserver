@@ -13,6 +13,7 @@ namespace CRM.Server.Services
         Task<ApiResponse<List<TicketResponseDto>>> GetAll();
         Task<ApiResponse<TicketResponseDto>> GetTicketById(int id);
         Task<ApiResponse<List<TicketResponseDto>>> GetByCustomerId(int customerId);
+        Task<ApiResponse<List<TicketResponseDto>>> GetByCustomerCode(string customerCode);
         Task<ApiResponse<List<TicketResponseDto>>> GetByStatus(string status);
         Task<ApiResponse<List<TicketResponseDto>>> GetByAssignedTo(int userId);
         Task<ApiResponse<TicketResponseDto>> CreateTicket(CreateTicketDto dto);
@@ -38,7 +39,7 @@ namespace CRM.Server.Services
             TicketStatus Status,
             TicketPriority Priority,
             int AssignedTo,
-            int CustomerId,
+            string CustomerCode,
             int LocationId,
             string Subject,
             string Description,
@@ -50,7 +51,7 @@ namespace CRM.Server.Services
             t.Status,
             t.Priority,
             t.AssignedTo,
-            t.CustomerId,
+            t.CustomerCode,
             t.LocationId,
             t.Subject,
             t.Description,
@@ -85,7 +86,7 @@ namespace CRM.Server.Services
             var sb = new StringBuilder();
             sb.Append("Ticket created. ");
             sb.Append($"Subject: {Trunc(t.Subject, 120)}. ");
-            sb.Append($"Customer #{t.CustomerId}, location #{t.LocationId}. ");
+            sb.Append($"Customer code {t.CustomerCode}, location #{t.LocationId}. ");
             sb.Append($"Assigned to user #{t.AssignedTo}. ");
             sb.Append($"Priority: {t.Priority}, status: {t.Status}. ");
             sb.Append($"Category: {t.Category}. ");
@@ -104,8 +105,8 @@ namespace CRM.Server.Services
                 parts.Add($"Priority: {b.Priority} → {a.Priority}");
             if (b.AssignedTo != a.AssignedTo)
                 parts.Add($"Assigned to: user #{b.AssignedTo} → user #{a.AssignedTo}");
-            if (b.CustomerId != a.CustomerId)
-                parts.Add($"Customer: #{b.CustomerId} → #{a.CustomerId}");
+            if (!string.Equals(b.CustomerCode, a.CustomerCode, StringComparison.Ordinal))
+                parts.Add($"Customer: {b.CustomerCode} → {a.CustomerCode}");
             if (b.LocationId != a.LocationId)
                 parts.Add($"Location: #{b.LocationId} → #{a.LocationId}");
             if (!string.Equals(b.Subject, a.Subject, StringComparison.Ordinal))
@@ -144,13 +145,18 @@ namespace CRM.Server.Services
             });
         }
 
+        private static async Task EnrichTicketsAsync(CrmDbContext ctx, List<TicketResponseDto> rows) =>
+            await EntityCodeResolution.EnrichTicketDtosAsync(ctx, rows);
+
         private static TicketResponseDto Map(Ticket t) => new()
         {
             Id = t.Id,
-            CustomerId = t.CustomerId,
+            CustomerId = t.Customer?.Id ?? 0,
             LocationId = t.LocationId,
             Subject = t.Subject,
             Description = t.Description,
+            ContactPerson = t.ContactPerson,
+            ContactMobile = t.ContactMobile,
             Status = t.Status.ToString(),
             Priority = t.Priority.ToString(),
             AssignedTo = t.AssignedTo,
@@ -170,14 +176,16 @@ namespace CRM.Server.Services
             try
             {
                 var total = await _context.Tickets.CountAsync();
-                var items = await _context.Tickets.OrderByDescending(t => t.CreatedAt)
+                var items = await _context.Tickets.Include(t => t.Customer).OrderByDescending(t => t.CreatedAt)
                     .Skip((pageNumber - 1) * pageSize).Take(pageSize).ToListAsync();
+                var dtos = items.Select(Map).ToList();
+                await EnrichTicketsAsync(_context, dtos);
                 return new ApiResponse<PaginatedResponse<TicketResponseDto>>
                 {
                     Success = true,
                     Data = new PaginatedResponse<TicketResponseDto>
                     {
-                        Items = items.Select(Map).ToList(),
+                        Items = dtos,
                         Total = total,
                         PageNumber = pageNumber,
                         PageSize = pageSize
@@ -194,8 +202,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Tickets.OrderByDescending(t => t.CreatedAt).ToListAsync();
-                return new ApiResponse<List<TicketResponseDto>> { Success = true, Data = list.Select(Map).ToList() };
+                var list = await _context.Tickets.Include(t => t.Customer).OrderByDescending(t => t.CreatedAt).ToListAsync();
+                var dtos = list.Select(Map).ToList();
+                await EnrichTicketsAsync(_context, dtos);
+                return new ApiResponse<List<TicketResponseDto>> { Success = true, Data = dtos };
             }
             catch (Exception ex)
             {
@@ -207,9 +217,11 @@ namespace CRM.Server.Services
         {
             try
             {
-                var t = await _context.Tickets.FindAsync(id);
+                var t = await _context.Tickets.Include(x => x.Customer).FirstOrDefaultAsync(x => x.Id == id);
                 if (t == null) return new ApiResponse<TicketResponseDto> { Success = false, Message = "Ticket not found" };
-                return new ApiResponse<TicketResponseDto> { Success = true, Data = Map(t) };
+                var one = Map(t);
+                await EnrichTicketsAsync(_context, new List<TicketResponseDto> { one });
+                return new ApiResponse<TicketResponseDto> { Success = true, Data = one };
             }
             catch (Exception ex)
             {
@@ -221,8 +233,28 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Tickets.Where(t => t.CustomerId == customerId).OrderByDescending(t => t.CreatedAt).ToListAsync();
-                return new ApiResponse<List<TicketResponseDto>> { Success = true, Data = list.Select(Map).ToList() };
+                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(_context, customerId);
+                if (string.IsNullOrEmpty(cc))
+                    return new ApiResponse<List<TicketResponseDto>> { Success = true, Data = new List<TicketResponseDto>() };
+                var list = await _context.Tickets.Include(t => t.Customer).Where(t => t.CustomerCode == cc).OrderByDescending(t => t.CreatedAt).ToListAsync();
+                var dtos = list.Select(Map).ToList();
+                await EnrichTicketsAsync(_context, dtos);
+                return new ApiResponse<List<TicketResponseDto>> { Success = true, Data = dtos };
+            }
+            catch (Exception ex)
+            {
+                return new ApiResponse<List<TicketResponseDto>> { Success = false, Message = ex.Message };
+            }
+        }
+
+        public async Task<ApiResponse<List<TicketResponseDto>>> GetByCustomerCode(string customerCode)
+        {
+            try
+            {
+                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(_context, 0, customerCode);
+                if (err != null)
+                    return new ApiResponse<List<TicketResponseDto>> { Success = false, Message = err };
+                return await GetByCustomerId(cid);
             }
             catch (Exception ex)
             {
@@ -235,8 +267,10 @@ namespace CRM.Server.Services
             try
             {
                 var st = Enum.Parse<TicketStatus>(status, true);
-                var list = await _context.Tickets.Where(t => t.Status == st).OrderByDescending(t => t.CreatedAt).ToListAsync();
-                return new ApiResponse<List<TicketResponseDto>> { Success = true, Data = list.Select(Map).ToList() };
+                var list = await _context.Tickets.Include(t => t.Customer).Where(t => t.Status == st).OrderByDescending(t => t.CreatedAt).ToListAsync();
+                var dtos = list.Select(Map).ToList();
+                await EnrichTicketsAsync(_context, dtos);
+                return new ApiResponse<List<TicketResponseDto>> { Success = true, Data = dtos };
             }
             catch
             {
@@ -248,8 +282,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Tickets.Where(t => t.AssignedTo == userId).OrderByDescending(t => t.CreatedAt).ToListAsync();
-                return new ApiResponse<List<TicketResponseDto>> { Success = true, Data = list.Select(Map).ToList() };
+                var list = await _context.Tickets.Include(t => t.Customer).Where(t => t.AssignedTo == userId).OrderByDescending(t => t.CreatedAt).ToListAsync();
+                var dtos = list.Select(Map).ToList();
+                await EnrichTicketsAsync(_context, dtos);
+                return new ApiResponse<List<TicketResponseDto>> { Success = true, Data = dtos };
             }
             catch (Exception ex)
             {
@@ -261,13 +297,23 @@ namespace CRM.Server.Services
         {
             try
             {
+                var (custCode, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, dto.CustomerId, dto.CustomerCode);
+                if (cErr != null)
+                    return new ApiResponse<TicketResponseDto> { Success = false, Message = cErr };
+                var (locationId, lErr) = await EntityCodeResolution.ResolveRequiredLocationIdAsync(
+                    _context, custCode, dto.LocationId, dto.LocationCode);
+                if (lErr != null)
+                    return new ApiResponse<TicketResponseDto> { Success = false, Message = lErr };
+
                 var now = DateTime.UtcNow;
                 var ticket = new Ticket
                 {
-                    CustomerId = dto.CustomerId,
-                    LocationId = dto.LocationId,
+                    CustomerCode = custCode,
+                    LocationId = locationId,
                     Subject = dto.Subject,
                     Description = dto.Description,
+                    ContactPerson = string.IsNullOrWhiteSpace(dto.ContactPerson) ? null : dto.ContactPerson.Trim(),
+                    ContactMobile = string.IsNullOrWhiteSpace(dto.ContactMobile) ? null : dto.ContactMobile.Trim(),
                     Status = TicketStatus.open,
                     Priority = Enum.Parse<TicketPriority>(dto.Priority, true),
                     AssignedTo = dto.AssignedTo,
@@ -282,10 +328,13 @@ namespace CRM.Server.Services
                 };
                 _context.Tickets.Add(ticket);
                 await _context.SaveChangesAsync();
+                await _context.Entry(ticket).Reference(t => t.Customer).LoadAsync();
                 var actorCreate = ResolveTimelineActor(dto.ChangedByUserId, ticket.AssignedTo);
                 AddTicketTimelineRow(ticket.Id, actorCreate, TimelineTypeSystem, BuildCreateTimelineNotes(ticket));
                 await _context.SaveChangesAsync();
-                return new ApiResponse<TicketResponseDto> { Success = true, Data = Map(ticket) };
+                var created = Map(ticket);
+                await EnrichTicketsAsync(_context, new List<TicketResponseDto> { created });
+                return new ApiResponse<TicketResponseDto> { Success = true, Data = created };
             }
             catch (Exception ex)
             {
@@ -297,7 +346,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var ticket = await _context.Tickets.FindAsync(id);
+                var ticket = await _context.Tickets.Include(t => t.Customer).FirstOrDefaultAsync(t => t.Id == id);
                 if (ticket == null) return new ApiResponse<TicketResponseDto> { Success = false, Message = "Ticket not found" };
                 var before = Snap(ticket);
                 if (!string.IsNullOrWhiteSpace(dto.Status))
@@ -305,8 +354,32 @@ namespace CRM.Server.Services
                 if (!string.IsNullOrWhiteSpace(dto.Priority))
                     ticket.Priority = Enum.Parse<TicketPriority>(dto.Priority, true);
                 if (dto.AssignedTo.HasValue) ticket.AssignedTo = dto.AssignedTo.Value;
-                if (dto.CustomerId.HasValue) ticket.CustomerId = dto.CustomerId.Value;
-                if (dto.LocationId.HasValue) ticket.LocationId = dto.LocationId.Value;
+
+                if (!string.IsNullOrWhiteSpace(dto.CustomerCode))
+                {
+                    var (cc, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, 0, dto.CustomerCode);
+                    if (cErr != null)
+                        return new ApiResponse<TicketResponseDto> { Success = false, Message = cErr };
+                    ticket.CustomerCode = cc;
+                }
+                else if (dto.CustomerId.HasValue)
+                {
+                    var (cc, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, dto.CustomerId.Value, null);
+                    if (cErr != null)
+                        return new ApiResponse<TicketResponseDto> { Success = false, Message = cErr };
+                    ticket.CustomerCode = cc;
+                }
+
+                if (!string.IsNullOrWhiteSpace(dto.LocationCode))
+                {
+                    var (lid, lErr) = await EntityCodeResolution.ResolveRequiredLocationIdAsync(
+                        _context, ticket.CustomerCode, 0, dto.LocationCode);
+                    if (lErr != null)
+                        return new ApiResponse<TicketResponseDto> { Success = false, Message = lErr };
+                    ticket.LocationId = lid;
+                }
+                else if (dto.LocationId.HasValue)
+                    ticket.LocationId = dto.LocationId.Value;
                 if (dto.Subject != null) ticket.Subject = dto.Subject.Trim();
                 if (dto.Description != null) ticket.Description = dto.Description;
                 if (dto.Category != null)
@@ -344,7 +417,10 @@ namespace CRM.Server.Services
                 }
 
                 await _context.SaveChangesAsync();
-                return new ApiResponse<TicketResponseDto> { Success = true, Data = Map(ticket) };
+                await _context.Entry(ticket).Reference(t => t.Customer).LoadAsync();
+                var updated = Map(ticket);
+                await EnrichTicketsAsync(_context, new List<TicketResponseDto> { updated });
+                return new ApiResponse<TicketResponseDto> { Success = true, Data = updated };
             }
             catch (Exception ex)
             {

@@ -11,7 +11,9 @@ namespace CRM.Server.Services
         Task<ApiResponse<List<LocationResponseDto>>> GetAll();
         Task<ApiResponse<LocationResponseDto>> GetById(int id);
         Task<ApiResponse<PaginatedResponse<LocationResponseDto>>> GetLocationsByCustomer(int customerId, int pageNumber = 1, int pageSize = 10);
+        Task<ApiResponse<PaginatedResponse<LocationResponseDto>>> GetLocationsByCustomerCode(string customerCode, int pageNumber = 1, int pageSize = 10);
         Task<ApiResponse<List<LocationResponseDto>>> GetByCustomerId(int customerId);
+        Task<ApiResponse<List<LocationResponseDto>>> GetByCustomerCode(string customerCode);
         Task<ApiResponse<LocationResponseDto>> CreateLocation(CreateLocationDto dto);
         Task<ApiResponse<LocationResponseDto>> UpdateLocation(int id, CreateLocationDto dto);
         Task<ApiResponse<bool>> DeleteLocation(int id);
@@ -27,10 +29,11 @@ namespace CRM.Server.Services
             _context = context;
         }
 
-        private static LocationResponseDto Map(Location b) => new()
+        private static LocationResponseDto Map(Location b, int customerId) => new()
         {
             Id = b.Id,
-            CustomerId = b.CustomerId,
+            CustomerId = customerId,
+            CustomerCode = b.CustomerCode,
             Code = b.Code,
             Name = b.Name,
             RegName = b.RegName,
@@ -58,8 +61,17 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Locations.OrderByDescending(x => x.CreatedAt).ToListAsync();
-                return new ApiResponse<List<LocationResponseDto>> { Success = true, Data = list.Select(Map).ToList() };
+                var rows = await _context.Locations.AsNoTracking()
+                    .Join(
+                        _context.Customers.AsNoTracking(),
+                        l => l.CustomerCode,
+                        c => c.Code,
+                        (l, c) => new { Location = l, CustomerId = c.Id }
+                    )
+                    .OrderByDescending(x => x.Location.CreatedAt)
+                    .ToListAsync();
+                var dtos = rows.Select(x => Map(x.Location, x.CustomerId)).ToList();
+                return new ApiResponse<List<LocationResponseDto>> { Success = true, Data = dtos };
             }
             catch (Exception ex)
             {
@@ -71,9 +83,17 @@ namespace CRM.Server.Services
         {
             try
             {
-                var x = await _context.Locations.FindAsync(id);
-                if (x == null) return new ApiResponse<LocationResponseDto> { Success = false, Message = "Location not found" };
-                return new ApiResponse<LocationResponseDto> { Success = true, Data = Map(x) };
+                var row = await _context.Locations.AsNoTracking()
+                    .Where(l => l.Id == id)
+                    .Join(
+                        _context.Customers.AsNoTracking(),
+                        l => l.CustomerCode,
+                        c => c.Code,
+                        (l, c) => new { Location = l, CustomerId = c.Id }
+                    )
+                    .FirstOrDefaultAsync();
+                if (row == null) return new ApiResponse<LocationResponseDto> { Success = false, Message = "Location not found" };
+                return new ApiResponse<LocationResponseDto> { Success = true, Data = Map(row.Location, row.CustomerId) };
             }
             catch (Exception ex)
             {
@@ -85,15 +105,29 @@ namespace CRM.Server.Services
         {
             try
             {
-                var q = _context.Locations.Where(b => b.CustomerId == customerId);
+                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(_context, customerId);
+                if (string.IsNullOrEmpty(cc))
+                    return new ApiResponse<PaginatedResponse<LocationResponseDto>>
+                    {
+                        Success = true,
+                        Data = new PaginatedResponse<LocationResponseDto>
+                        {
+                            Items = new List<LocationResponseDto>(),
+                            Total = 0,
+                            PageNumber = pageNumber,
+                            PageSize = pageSize
+                        }
+                    };
+                var q = _context.Locations.AsNoTracking().Where(b => b.CustomerCode == cc);
                 var total = await q.CountAsync();
                 var items = await q.OrderByDescending(b => b.CreatedAt).Skip((pageNumber - 1) * pageSize).Take(pageSize).ToListAsync();
+                var dtos = items.Select(x => Map(x, customerId)).ToList();
                 return new ApiResponse<PaginatedResponse<LocationResponseDto>>
                 {
                     Success = true,
                     Data = new PaginatedResponse<LocationResponseDto>
                     {
-                        Items = items.Select(Map).ToList(),
+                        Items = dtos,
                         Total = total,
                         PageNumber = pageNumber,
                         PageSize = pageSize
@@ -106,12 +140,52 @@ namespace CRM.Server.Services
             }
         }
 
+        public async Task<ApiResponse<PaginatedResponse<LocationResponseDto>>> GetLocationsByCustomerCode(
+            string customerCode,
+            int pageNumber = 1,
+            int pageSize = 10)
+        {
+            try
+            {
+                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(_context, 0, customerCode);
+                if (err != null)
+                    return new ApiResponse<PaginatedResponse<LocationResponseDto>> { Success = false, Message = err };
+                return await GetLocationsByCustomer(cid, pageNumber, pageSize);
+            }
+            catch (Exception ex)
+            {
+                return new ApiResponse<PaginatedResponse<LocationResponseDto>> { Success = false, Message = ex.Message };
+            }
+        }
+
         public async Task<ApiResponse<List<LocationResponseDto>>> GetByCustomerId(int customerId)
         {
             try
             {
-                var list = await _context.Locations.Where(b => b.CustomerId == customerId).OrderByDescending(b => b.CreatedAt).ToListAsync();
-                return new ApiResponse<List<LocationResponseDto>> { Success = true, Data = list.Select(Map).ToList() };
+                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(_context, customerId);
+                if (string.IsNullOrEmpty(cc))
+                    return new ApiResponse<List<LocationResponseDto>> { Success = true, Data = new List<LocationResponseDto>() };
+                var list = await _context.Locations.AsNoTracking()
+                    .Where(b => b.CustomerCode == cc)
+                    .OrderByDescending(b => b.CreatedAt)
+                    .ToListAsync();
+                var dtos = list.Select(x => Map(x, customerId)).ToList();
+                return new ApiResponse<List<LocationResponseDto>> { Success = true, Data = dtos };
+            }
+            catch (Exception ex)
+            {
+                return new ApiResponse<List<LocationResponseDto>> { Success = false, Message = ex.Message };
+            }
+        }
+
+        public async Task<ApiResponse<List<LocationResponseDto>>> GetByCustomerCode(string customerCode)
+        {
+            try
+            {
+                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(_context, 0, customerCode);
+                if (err != null)
+                    return new ApiResponse<List<LocationResponseDto>> { Success = false, Message = err };
+                return await GetByCustomerId(cid);
             }
             catch (Exception ex)
             {
@@ -123,13 +197,17 @@ namespace CRM.Server.Services
         {
             try
             {
+                var (custCode, custId, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, dto.CustomerId, dto.CustomerCode);
+                if (cErr != null)
+                    return new ApiResponse<LocationResponseDto> { Success = false, Message = cErr };
+
                 var now = DateTime.UtcNow;
                 var code = string.IsNullOrWhiteSpace(dto.Code)
                     ? $"LOC-{Guid.NewGuid().ToString()[..8].ToUpperInvariant()}"
                     : dto.Code;
                 var location = new Location
                 {
-                    CustomerId = dto.CustomerId,
+                    CustomerCode = custCode,
                     Name = dto.Name,
                     RegName = dto.RegName,
                     Code = code,
@@ -154,7 +232,8 @@ namespace CRM.Server.Services
                 };
                 _context.Locations.Add(location);
                 await _context.SaveChangesAsync();
-                return new ApiResponse<LocationResponseDto> { Success = true, Data = Map(location) };
+                var created = Map(location, custId);
+                return new ApiResponse<LocationResponseDto> { Success = true, Data = created };
             }
             catch (Exception ex)
             {
@@ -166,8 +245,32 @@ namespace CRM.Server.Services
         {
             try
             {
-                var location = await _context.Locations.FindAsync(id);
+                var location = await _context.Locations.FirstOrDefaultAsync(l => l.Id == id);
                 if (location == null) return new ApiResponse<LocationResponseDto> { Success = false, Message = "Location not found" };
+                int customerId = 0;
+
+                if (!string.IsNullOrWhiteSpace(dto.CustomerCode))
+                {
+                    var (cc, cid, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, 0, dto.CustomerCode);
+                    if (cErr != null)
+                        return new ApiResponse<LocationResponseDto> { Success = false, Message = cErr };
+                    location.CustomerCode = cc;
+                    customerId = cid;
+                }
+                else if (dto.CustomerId > 0)
+                {
+                    var (cc, cid, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, dto.CustomerId, null);
+                    if (cErr != null)
+                        return new ApiResponse<LocationResponseDto> { Success = false, Message = cErr };
+                    location.CustomerCode = cc;
+                    customerId = cid;
+                }
+                else
+                {
+                    var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(_context, 0, location.CustomerCode);
+                    if (err == null) customerId = cid;
+                }
+
                 location.Name = dto.Name;
                 location.RegName = dto.RegName;
                 if (!string.IsNullOrWhiteSpace(dto.Code)) location.Code = dto.Code;
@@ -187,7 +290,8 @@ namespace CRM.Server.Services
                 location.ModifiedAt = DateTime.UtcNow;
                 location.ModifiedBy = AuditUserIds.System;
                 await _context.SaveChangesAsync();
-                return new ApiResponse<LocationResponseDto> { Success = true, Data = Map(location) };
+                var updated = Map(location, customerId);
+                return new ApiResponse<LocationResponseDto> { Success = true, Data = updated };
             }
             catch (Exception ex)
             {

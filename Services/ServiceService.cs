@@ -14,6 +14,7 @@ namespace CRM.Server.Services
         Task<ApiResponse<List<ServiceResponseDto>>> GetAllServicesList();
         Task<ApiResponse<ServiceResponseDto>> GetServiceById(int id);
         Task<ApiResponse<List<ServiceResponseDto>>> GetServicesByCustomer(int customerId);
+        Task<ApiResponse<List<ServiceResponseDto>>> GetServicesByCustomerCode(string customerCode);
         Task<ApiResponse<ServiceResponseDto>> CreateService(CreateServiceDto dto);
         Task<ApiResponse<ServiceResponseDto>> UpdateService(int id, UpdateServiceDto dto);
         Task<ApiResponse<bool>> DeleteService(int id);
@@ -21,6 +22,7 @@ namespace CRM.Server.Services
         Task<ApiResponse<ImplementationTimelineEntryDto>> AddImplementationTimelineEntry(int serviceId, AddImplementationTimelineEntryDto dto);
         Task<ApiResponse<List<ImplementationAssignmentDto>>> GetAllImplementationAssignments();
         Task<ApiResponse<ImplementationAssignmentDto>> UpsertImplementationAssignment(int serviceId, UpsertImplementationAssignmentDto dto);
+        Task<ApiResponse<ServiceResponseDto>> GoLive(int id, GoLiveServiceDto dto);
     }
 
     public class ServiceService : IServiceService
@@ -60,13 +62,15 @@ namespace CRM.Server.Services
         private static ServiceResponseDto MapService(Service s) => new()
         {
             Id = s.Id,
-            CustomerId = s.CustomerId,
+            CustomerId = s.Customer?.Id ?? 0,
             LocationId = s.LocationId,
             TradeNameId = s.TradeNameId,
             ServiceTypeId = s.ServiceTypeId,
             FrequencyId = s.FrequencyId,
             DueDate = s.DueDate,
             DueMonth = s.DueMonth,
+            AmcPercentage = s.AmcPercentage,
+            AmcAmount = s.AmcAmount,
             ImplementationRequired = s.ImplementationRequired,
             ImplementationStatusId = WorkflowToApiCode(s.ImplementationStatus),
             ImplementationStageId = s.ImplementationStageId,
@@ -84,7 +88,8 @@ namespace CRM.Server.Services
             CreatedAt = s.CreatedAt,
             CreatedBy = s.CreatedBy,
             ModifiedAt = s.ModifiedAt,
-            ModifiedBy = s.ModifiedBy
+            ModifiedBy = s.ModifiedBy,
+            LiveDate = s.LiveDate
         };
 
         /// <summary>Hardcoded API codes for implementation status (not reference_entries).</summary>
@@ -226,9 +231,27 @@ namespace CRM.Server.Services
             var now = DateTime.UtcNow;
 
             var invoice = await _context.Invoices
-                .Where(i => i.ServiceId == service.Id)
+                .Where(i => i.ServiceId == service.Id && !i.InvoiceNumber.StartsWith("INV-AMC-"))
                 .OrderByDescending(i => i.Id)
                 .FirstOrDefaultAsync();
+
+            // IMPORTANT: Do NOT bind subscription dates unless the service is explicitly marked live.
+            // When LiveDate is not set, keep invoice dates at +/-infinity.
+            // Npgsql represents +/-infinity as DateTime.MinValue/MaxValue; API normalizes those to null for UI.
+            var startAt = service.LiveDate.HasValue ? service.LiveDate.Value.Date : DateTime.MinValue;
+            var endAt = service.LiveDate.HasValue ? startAt.AddYears(1) : DateTime.MaxValue;
+            if (service.LiveDate.HasValue && service.FrequencyId.HasValue)
+            {
+                var freq = await _context.ReferenceEntries.AsNoTracking()
+                    .FirstOrDefaultAsync(r => r.Id == service.FrequencyId.Value);
+                if (freq != null && !string.IsNullOrEmpty(freq.Label))
+                {
+                    var label = freq.Label.ToLowerInvariant();
+                    if (label.Contains("month")) endAt = startAt.AddMonths(1);
+                    else if (label.Contains("quarter")) endAt = startAt.AddMonths(3);
+                    else if (label.Contains("half")) endAt = startAt.AddMonths(6);
+                }
+            }
 
             if (invoice == null)
             {
@@ -237,15 +260,15 @@ namespace CRM.Server.Services
                 invoice = new Invoice
                 {
                     InvoiceNumber = $"INV-S{service.Id}-{now:yyyyMMddHHmmss}",
-                    CustomerId = service.CustomerId,
+                    CustomerCode = service.CustomerCode,
                     ServiceId = service.Id,
                     StaffId = staffFromServiceCreator,
                     PaymentModeId = modeId,
                     PaymentStatusId = statusId,
                     Receivable = receivable,
                     Received = 0,
-                    SubscriptionStartAt = now.Date,
-                    SubscriptionEndAt = now.Date.AddMonths(1),
+                    SubscriptionStartAt = startAt,
+                    SubscriptionEndAt = endAt,
                     IsActive = true,
                     CreatedAt = now,
                     CreatedBy = AuditUserIds.System,
@@ -256,10 +279,155 @@ namespace CRM.Server.Services
             }
             else
             {
-                invoice.CustomerId = service.CustomerId;
+                invoice.CustomerCode = service.CustomerCode;
                 invoice.Receivable = receivable;
+                invoice.SubscriptionStartAt = startAt;
+                invoice.SubscriptionEndAt = endAt;
                 invoice.ModifiedAt = now;
                 invoice.ModifiedBy = AuditUserIds.System;
+            }
+        }
+
+        private async Task EnsureAmcInvoiceAsync(Service service, DateTime currentStartAt, DateTime currentEndAt)
+        {
+            var amcAmount = service.AmcAmount;
+            if (!amcAmount.HasValue && service.AmcPercentage.HasValue && (service.ServiceValue ?? 0) > 0)
+            {
+                amcAmount = Math.Round((service.ServiceValue!.Value * (service.AmcPercentage.Value / 100m)), 2, MidpointRounding.AwayFromZero);
+            }
+
+            if (!amcAmount.HasValue || amcAmount.Value <= 0)
+                return;
+
+            var nextStart = currentEndAt.Date;
+            var nextEnd = nextStart.AddYears(1);
+
+            // Resolve "AMC" service type id from reference data (category: Service Type, value: amc).
+            var amcTypeId = await _context.ReferenceEntries.AsNoTracking()
+                .Where(r => r.Category == "Service Type" && r.IsActive && r.Value.ToLower() == "amc")
+                .Select(r => (int?)r.Id)
+                .FirstOrDefaultAsync();
+            if (!amcTypeId.HasValue)
+                return;
+
+            // Ensure there is an AMC service row to bind this invoice.
+            var amcService = await _context.Services
+                .OrderByDescending(s => s.Id)
+                .FirstOrDefaultAsync(s =>
+                    s.CustomerCode == service.CustomerCode &&
+                    s.ServiceTypeId == amcTypeId.Value &&
+                    s.LiveDate.HasValue &&
+                    s.LiveDate.Value.Date == nextStart);
+
+            if (amcService == null)
+            {
+                var now = DateTime.UtcNow;
+                amcService = new Service
+                {
+                    CustomerCode = service.CustomerCode,
+                    LocationId = service.LocationId,
+                    TradeNameId = service.TradeNameId,
+                    ServiceTypeId = amcTypeId.Value,
+                    FrequencyId = service.FrequencyId,
+                    DueDate = nextStart,
+                    DueMonth = nextStart.Month,
+                    ImplementationRequired = false,
+                    ImplementationStatus = ImplementationWorkflowStatus.OPEN,
+                    TaxId = service.TaxId,
+                    ServiceValue = amcAmount.Value,
+                    AmcPercentage = null,
+                    AmcAmount = null,
+                    Notes = $"AMC for service #{service.Id}",
+                    IsActive = true,
+                    LiveDate = nextStart,
+                    CreatedAt = now,
+                    CreatedBy = AuditUserIds.System,
+                    ModifiedAt = now,
+                    ModifiedBy = AuditUserIds.System,
+                    ProgressPercentage = 0
+                };
+                _context.Services.Add(amcService);
+                await _context.SaveChangesAsync();
+            }
+
+            // Avoid duplicate AMC invoices for this AMC service + period.
+            var exists = await _context.Invoices.AsNoTracking().AnyAsync(i =>
+                i.ServiceId == amcService.Id &&
+                i.InvoiceNumber.StartsWith("INV-AMC-") &&
+                i.SubscriptionStartAt == nextStart &&
+                i.SubscriptionEndAt == nextEnd);
+            if (exists) return;
+
+            ReferenceEntry? taxEntry = null;
+            if (service.TaxId.HasValue)
+            {
+                taxEntry = await _context.ReferenceEntries.AsNoTracking()
+                    .FirstOrDefaultAsync(r => r.Id == service.TaxId.Value);
+            }
+            var taxPct = ResolveTaxPercent(taxEntry);
+            var receivable = ComputeReceivable(amcAmount.Value, taxPct);
+
+            var now2 = DateTime.UtcNow;
+            var (modeId, statusId) = await GetDefaultInvoicePaymentRefsAsync();
+            var staffFromServiceCreator = await ResolveStaffIdFromServiceCreatedByAsync(service.CreatedBy);
+
+            var inv = new Invoice
+            {
+                InvoiceNumber = $"INV-AMC-S{amcService.Id}-{now2:yyyyMMddHHmmss}",
+                CustomerCode = service.CustomerCode,
+                ServiceId = amcService.Id,
+                StaffId = staffFromServiceCreator,
+                PaymentModeId = modeId,
+                PaymentStatusId = statusId,
+                Receivable = receivable,
+                Received = 0,
+                SubscriptionStartAt = nextStart,
+                SubscriptionEndAt = nextEnd,
+                IsActive = true,
+                CreatedAt = now2,
+                CreatedBy = AuditUserIds.System,
+                ModifiedAt = now2,
+                ModifiedBy = AuditUserIds.System
+            };
+            _context.Invoices.Add(inv);
+        }
+
+        public async Task<ApiResponse<ServiceResponseDto>> GoLive(int id, GoLiveServiceDto dto)
+        {
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var service = await _context.Services.FirstOrDefaultAsync(s => s.Id == id);
+                if (service == null)
+                {
+                    await tx.RollbackAsync();
+                    return new ApiResponse<ServiceResponseDto> { Success = false, Message = "Service not found" };
+                }
+
+                service.LiveDate = dto.LiveDate;
+                service.ModifiedAt = DateTime.UtcNow;
+                service.ModifiedBy = dto.ModifiedByUserId is { } uid && uid > 0 ? uid : AuditUserIds.System;
+
+                await _context.SaveChangesAsync();
+                await SyncBillingInvoiceForServiceAsync(service);
+                if (service.LiveDate.HasValue)
+                {
+                    var currentStart = service.LiveDate.Value.Date;
+                    var currentEnd = currentStart.AddYears(1);
+                    await EnsureAmcInvoiceAsync(service, currentStart, currentEnd);
+                }
+                await _context.SaveChangesAsync();
+                await tx.CommitAsync();
+
+                await _context.Entry(service).Reference(s => s.Customer).LoadAsync();
+                var updated = MapService(service);
+                await EntityCodeResolution.EnrichServiceDtosAsync(_context, new List<ServiceResponseDto> { updated });
+                return new ApiResponse<ServiceResponseDto> { Success = true, Message = "Service marked live", Data = updated };
+            }
+            catch (Exception ex)
+            {
+                await tx.RollbackAsync();
+                return new ApiResponse<ServiceResponseDto> { Success = false, Message = $"Error marking service live: {FormatPersistenceError(ex)}" };
             }
         }
 
@@ -270,17 +438,20 @@ namespace CRM.Server.Services
                 var total = await _context.Services.CountAsync();
                 var services = await _context.Services
                     .AsNoTracking()
+                    .Include(s => s.Customer)
                     .OrderByDescending(s => s.CreatedAt)
                     .Skip((pageNumber - 1) * pageSize)
                     .Take(pageSize)
                     .ToListAsync();
 
+                var items = services.Select(MapService).ToList();
+                await EntityCodeResolution.EnrichServiceDtosAsync(_context, items);
                 return new ApiResponse<PaginatedResponse<ServiceResponseDto>>
                 {
                     Success = true,
                     Data = new PaginatedResponse<ServiceResponseDto>
                     {
-                        Items = services.Select(MapService).ToList(),
+                        Items = items,
                         Total = total,
                         PageNumber = pageNumber,
                         PageSize = pageSize
@@ -301,8 +472,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Services.AsNoTracking().OrderByDescending(s => s.CreatedAt).ToListAsync();
-                return new ApiResponse<List<ServiceResponseDto>> { Success = true, Data = list.Select(MapService).ToList() };
+                var list = await _context.Services.AsNoTracking().Include(s => s.Customer).OrderByDescending(s => s.CreatedAt).ToListAsync();
+                var dtos = list.Select(MapService).ToList();
+                await EntityCodeResolution.EnrichServiceDtosAsync(_context, dtos);
+                return new ApiResponse<List<ServiceResponseDto>> { Success = true, Data = dtos };
             }
             catch (Exception ex)
             {
@@ -314,10 +487,12 @@ namespace CRM.Server.Services
         {
             try
             {
-                var service = await _context.Services.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id);
+                var service = await _context.Services.AsNoTracking().Include(s => s.Customer).FirstOrDefaultAsync(s => s.Id == id);
                 if (service == null)
                     return new ApiResponse<ServiceResponseDto> { Success = false, Message = "Service not found" };
-                return new ApiResponse<ServiceResponseDto> { Success = true, Data = MapService(service) };
+                var one = MapService(service);
+                await EntityCodeResolution.EnrichServiceDtosAsync(_context, new List<ServiceResponseDto> { one });
+                return new ApiResponse<ServiceResponseDto> { Success = true, Data = one };
             }
             catch (Exception ex)
             {
@@ -329,15 +504,36 @@ namespace CRM.Server.Services
         {
             try
             {
+                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(_context, customerId);
+                if (string.IsNullOrEmpty(cc))
+                    return new ApiResponse<List<ServiceResponseDto>> { Success = true, Data = new List<ServiceResponseDto>() };
                 var services = await _context.Services.AsNoTracking()
-                    .Where(s => s.CustomerId == customerId)
+                    .Include(s => s.Customer)
+                    .Where(s => s.CustomerCode == cc)
                     .OrderByDescending(s => s.CreatedAt)
                     .ToListAsync();
-                return new ApiResponse<List<ServiceResponseDto>> { Success = true, Data = services.Select(MapService).ToList() };
+                var dtos = services.Select(MapService).ToList();
+                await EntityCodeResolution.EnrichServiceDtosAsync(_context, dtos);
+                return new ApiResponse<List<ServiceResponseDto>> { Success = true, Data = dtos };
             }
             catch (Exception ex)
             {
                 return new ApiResponse<List<ServiceResponseDto>> { Success = false, Message = $"Error fetching services: {ex.Message}" };
+            }
+        }
+
+        public async Task<ApiResponse<List<ServiceResponseDto>>> GetServicesByCustomerCode(string customerCode)
+        {
+            try
+            {
+                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(_context, 0, customerCode);
+                if (err != null)
+                    return new ApiResponse<List<ServiceResponseDto>> { Success = false, Message = err };
+                return await GetServicesByCustomer(cid);
+            }
+            catch (Exception ex)
+            {
+                return new ApiResponse<List<ServiceResponseDto>> { Success = false, Message = ex.Message };
             }
         }
 
@@ -346,17 +542,28 @@ namespace CRM.Server.Services
             await using var tx = await _context.Database.BeginTransactionAsync();
             try
             {
+                var (custCode, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, dto.CustomerId, dto.CustomerCode);
+                if (cErr != null)
+                    return new ApiResponse<ServiceResponseDto> { Success = false, Message = cErr };
+
+                var (locId, lErr) = await EntityCodeResolution.ResolveOptionalLocationIdAsync(
+                    _context, custCode, dto.LocationId, dto.LocationCode);
+                if (lErr != null)
+                    return new ApiResponse<ServiceResponseDto> { Success = false, Message = lErr };
+
                 var now = DateTime.UtcNow;
-                var dueMonth = dto.DueMonth > 0 ? dto.DueMonth : now.Month;
+                var dueMonth = dto.DueMonth is > 0 ? dto.DueMonth.Value : dto.DueDate.Month;
                 var service = new Service
                 {
-                    CustomerId = dto.CustomerId,
-                    LocationId = dto.LocationId,
+                    CustomerCode = custCode,
+                    LocationId = locId,
                     TradeNameId = dto.TradeNameId,
                     ServiceTypeId = dto.ServiceTypeId,
                     FrequencyId = dto.FrequencyId,
                     DueDate = dto.DueDate,
                     DueMonth = dueMonth,
+                    AmcPercentage = dto.AmcPercentage,
+                    AmcAmount = dto.AmcAmount,
                     ImplementationRequired = dto.ImplementationRequired,
                     ImplementationStatus = dto.ImplementationStatusId is { } sid
                         ? ApiCodeToWorkflow(sid)
@@ -368,6 +575,7 @@ namespace CRM.Server.Services
                     ServiceValue = dto.ServiceValue,
                     Notes = dto.Notes,
                     IsActive = true,
+                    LiveDate = dto.LiveDate,
                     CreatedAt = now,
                     CreatedBy = AuditUserIds.System,
                     ModifiedAt = now,
@@ -381,11 +589,14 @@ namespace CRM.Server.Services
                 await _context.SaveChangesAsync();
                 await tx.CommitAsync();
 
+                await _context.Entry(service).Reference(s => s.Customer).LoadAsync();
+                var createdDto = MapService(service);
+                await EntityCodeResolution.EnrichServiceDtosAsync(_context, new List<ServiceResponseDto> { createdDto });
                 return new ApiResponse<ServiceResponseDto>
                 {
                     Success = true,
                     Message = "Service created successfully",
-                    Data = MapService(service)
+                    Data = createdDto
                 };
             }
             catch (Exception ex)
@@ -411,6 +622,9 @@ namespace CRM.Server.Services
                 if (dto.FrequencyId.HasValue) service.FrequencyId = dto.FrequencyId;
                 if (dto.DueDate.HasValue) service.DueDate = dto.DueDate.Value;
                 if (dto.DueMonth.HasValue) service.DueMonth = dto.DueMonth.Value;
+                else if (dto.DueDate.HasValue) service.DueMonth = dto.DueDate.Value.Month;
+                if (dto.AmcPercentage.HasValue) service.AmcPercentage = dto.AmcPercentage;
+                if (dto.AmcAmount.HasValue) service.AmcAmount = dto.AmcAmount;
                 if (dto.ImplementationRequired.HasValue) service.ImplementationRequired = dto.ImplementationRequired.Value;
                 if (dto.ImplementationStatusId.HasValue)
                 {
@@ -448,10 +662,31 @@ namespace CRM.Server.Services
 
                 if (dto.UpdateBillingLinks == true)
                 {
-                    service.LocationId = dto.LocationId;
+                    if (!string.IsNullOrWhiteSpace(dto.LocationCode))
+                    {
+                        var (lid, lErr) = await EntityCodeResolution.ResolveOptionalLocationIdAsync(
+                            _context, service.CustomerCode, null, dto.LocationCode);
+                        if (lErr != null)
+                        {
+                            await tx.RollbackAsync();
+                            return new ApiResponse<ServiceResponseDto> { Success = false, Message = lErr };
+                        }
+
+                        service.LocationId = lid;
+                    }
+                    else
+                    {
+                        service.LocationId = dto.LocationId;
+                    }
+
                     service.TradeNameId = dto.TradeNameId;
                     service.TaxId = dto.TaxId;
                     service.ServiceValue = dto.ServiceValue;
+                    if (dto.UpdateBillingLinks == true) 
+                    {
+                        // Set LiveDate from dto if passed since it usually triggers invoice logic
+                        service.LiveDate = dto.LiveDate;
+                    }
                 }
 
                 if (dto.ProjectManagerId.HasValue)
@@ -470,7 +705,10 @@ namespace CRM.Server.Services
                 }
 
                 await tx.CommitAsync();
-                return new ApiResponse<ServiceResponseDto> { Success = true, Message = "Service updated successfully", Data = MapService(service) };
+                await _context.Entry(service).Reference(s => s.Customer).LoadAsync();
+                var updated = MapService(service);
+                await EntityCodeResolution.EnrichServiceDtosAsync(_context, new List<ServiceResponseDto> { updated });
+                return new ApiResponse<ServiceResponseDto> { Success = true, Message = "Service updated successfully", Data = updated };
             }
             catch (Exception ex)
             {
