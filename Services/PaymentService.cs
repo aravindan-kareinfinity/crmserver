@@ -13,11 +13,11 @@ namespace CRM.Server.Services
 
     public class PaymentService : IPaymentService
     {
-        private readonly CrmDbContext _context;
+        CrmDbContext context;
 
         public PaymentService(CrmDbContext context)
         {
-            _context = context;
+            this.context = context;
         }
 
         private static PaymentResponseDto MapPayment(Payment p) => new()
@@ -67,7 +67,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var rows = await _context.Payments.AsNoTracking()
+                var rows = await context.Payments.AsNoTracking()
                     .Where(p => p.InvoiceId == invoiceId && p.IsActive)
                     .OrderByDescending(p => p.ReceivedAt)
                     .ToListAsync();
@@ -115,10 +115,10 @@ namespace CRM.Server.Services
             if (dto.Amount <= 0)
                 return new ApiResponse<CollectPaymentResultDto> { Success = false, Message = "amount must be > 0" };
 
-            await using var tx = await _context.Database.BeginTransactionAsync();
+            await using var tx = await context.Database.BeginTransactionAsync();
             try
             {
-                var inv = await _context.Invoices
+                var inv = await context.Invoices
                     .Include(i => i.Customer)
                     .FirstOrDefaultAsync(i => i.Id == dto.InvoiceId);
                 if (inv == null)
@@ -144,11 +144,11 @@ namespace CRM.Server.Services
                 inv.PaymentModeId = dto.PaymentModeId;
 
                 // Resolve paid status id from reference_entries
-                var paidStatusId = await _context.ReferenceEntries.AsNoTracking()
+                var paidStatusId = await context.ReferenceEntries.AsNoTracking()
                     .Where(r => r.Category == "Payment Status" && r.Value == "paid" && r.IsActive)
                     .Select(r => r.Id)
                     .FirstOrDefaultAsync();
-                var pendingStatusId = await _context.ReferenceEntries.AsNoTracking()
+                var pendingStatusId = await context.ReferenceEntries.AsNoTracking()
                     .Where(r => r.Category == "Payment Status" && r.Value == "pending" && r.IsActive)
                     .Select(r => r.Id)
                     .FirstOrDefaultAsync();
@@ -192,10 +192,10 @@ namespace CRM.Server.Services
                     ModifiedAt = now,
                     ModifiedBy = auditUserId
                 };
-                _context.Payments.Add(payment);
+                context.Payments.Add(payment);
 
                 // Invoice timeline entry
-                _context.InvoiceTimelines.Add(new InvoiceTimeline
+                context.InvoiceTimelines.Add(new InvoiceTimeline
                 {
                     InvoiceId = inv.Id,
                     Type = 1,
@@ -209,11 +209,11 @@ namespace CRM.Server.Services
 
                 if (reciénPagado)
                 {
-                    var service = await _context.Services.FirstOrDefaultAsync(s => s.Id == inv.ServiceId);
+                    var service = await context.Services.FirstOrDefaultAsync(s => s.Id == inv.ServiceId);
                     if (service != null && service.ServiceValue > 0)
                     {
                         var freq = service.FrequencyId.HasValue 
-                            ? await _context.ReferenceEntries.AsNoTracking().FirstOrDefaultAsync(r => r.Id == service.FrequencyId.Value) 
+                            ? await context.ReferenceEntries.AsNoTracking().FirstOrDefaultAsync(r => r.Id == service.FrequencyId.Value) 
                             : null;
                         
                         if (freq != null && !string.IsNullOrEmpty(freq.Label))
@@ -222,10 +222,10 @@ namespace CRM.Server.Services
                             bool isCyclic = flabel.Contains("month") || flabel.Contains("quarter") || flabel.Contains("half") || flabel.Contains("year");
                             if (isCyclic)
                             {
-                                var existingUnpaid = await _context.Invoices.AnyAsync(i => i.ServiceId == service.Id && i.Id != inv.Id && i.Received <= 0);
+                                var existingUnpaid = await context.Invoices.AnyAsync(i => i.ServiceId == service.Id && i.Id != inv.Id && i.Received <= 0);
                                 if (!existingUnpaid)
                                 {
-                                    var taxEntry = service.TaxId.HasValue ? await _context.ReferenceEntries.AsNoTracking().FirstOrDefaultAsync(r => r.Id == service.TaxId.Value) : null;
+                                    var taxEntry = service.TaxId.HasValue ? await context.ReferenceEntries.AsNoTracking().FirstOrDefaultAsync(r => r.Id == service.TaxId.Value) : null;
                                     var newReceivable = ComputeReceivable(service.ServiceValue.Value, ResolveTaxPercent(taxEntry));
                                     
                                     var nextStart = DateTime.SpecifyKind(inv.SubscriptionEndAt, DateTimeKind.Utc);
@@ -252,9 +252,9 @@ namespace CRM.Server.Services
                                         ModifiedAt = DateTime.UtcNow,
                                         ModifiedBy = AuditUserIds.System
                                     };
-                                    _context.Invoices.Add(newInv);
+                                    context.Invoices.Add(newInv);
 
-                                    _context.InvoiceTimelines.Add(new InvoiceTimeline
+                                    context.InvoiceTimelines.Add(new InvoiceTimeline
                                     {
                                         InvoiceId = newInv.Id,
                                         Type = 1,
@@ -272,7 +272,7 @@ namespace CRM.Server.Services
                     }
                 }
 
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
                 await tx.CommitAsync();
 
                 var result = new CollectPaymentResultDto

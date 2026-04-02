@@ -28,11 +28,11 @@ namespace CRM.Server.Services
         private const int TimelineTypeSystem = 1;
         private const int TimelineTypeFieldUpdate = 2;
 
-        private readonly CrmDbContext _context;
+        CrmDbContext context;
 
         public TicketService(CrmDbContext context)
         {
-            _context = context;
+            this.context = context;
         }
 
         private readonly record struct TicketSnapshot(
@@ -129,7 +129,7 @@ namespace CRM.Server.Services
         private void AddTicketTimelineRow(int ticketId, int userId, int type, string notes)
         {
             var now = DateTime.UtcNow;
-            _context.TicketTimelines.Add(new TicketTimeline
+            context.TicketTimelines.Add(new TicketTimeline
             {
                 TicketId = ticketId,
                 UserId = userId,
@@ -175,11 +175,11 @@ namespace CRM.Server.Services
         {
             try
             {
-                var total = await _context.Tickets.CountAsync();
-                var items = await _context.Tickets.Include(t => t.Customer).OrderByDescending(t => t.CreatedAt)
+                var total = await context.Tickets.CountAsync();
+                var items = await context.Tickets.Include(t => t.Customer).OrderByDescending(t => t.CreatedAt)
                     .Skip((pageNumber - 1) * pageSize).Take(pageSize).ToListAsync();
                 var dtos = items.Select(Map).ToList();
-                await EnrichTicketsAsync(_context, dtos);
+                await EnrichTicketsAsync(context, dtos);
                 return new ApiResponse<PaginatedResponse<TicketResponseDto>>
                 {
                     Success = true,
@@ -202,9 +202,9 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Tickets.Include(t => t.Customer).OrderByDescending(t => t.CreatedAt).ToListAsync();
+                var list = await context.Tickets.Include(t => t.Customer).OrderByDescending(t => t.CreatedAt).ToListAsync();
                 var dtos = list.Select(Map).ToList();
-                await EnrichTicketsAsync(_context, dtos);
+                await EnrichTicketsAsync(context, dtos);
                 return new ApiResponse<List<TicketResponseDto>> { Success = true, Data = dtos };
             }
             catch (Exception ex)
@@ -217,10 +217,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var t = await _context.Tickets.Include(x => x.Customer).FirstOrDefaultAsync(x => x.Id == id);
+                var t = await context.Tickets.Include(x => x.Customer).FirstOrDefaultAsync(x => x.Id == id);
                 if (t == null) return new ApiResponse<TicketResponseDto> { Success = false, Message = "Ticket not found" };
                 var one = Map(t);
-                await EnrichTicketsAsync(_context, new List<TicketResponseDto> { one });
+                await EnrichTicketsAsync(context, new List<TicketResponseDto> { one });
                 return new ApiResponse<TicketResponseDto> { Success = true, Data = one };
             }
             catch (Exception ex)
@@ -233,12 +233,12 @@ namespace CRM.Server.Services
         {
             try
             {
-                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(_context, customerId);
+                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(context, customerId);
                 if (string.IsNullOrEmpty(cc))
                     return new ApiResponse<List<TicketResponseDto>> { Success = true, Data = new List<TicketResponseDto>() };
-                var list = await _context.Tickets.Include(t => t.Customer).Where(t => t.CustomerCode == cc).OrderByDescending(t => t.CreatedAt).ToListAsync();
+                var list = await context.Tickets.Include(t => t.Customer).Where(t => t.CustomerCode == cc).OrderByDescending(t => t.CreatedAt).ToListAsync();
                 var dtos = list.Select(Map).ToList();
-                await EnrichTicketsAsync(_context, dtos);
+                await EnrichTicketsAsync(context, dtos);
                 return new ApiResponse<List<TicketResponseDto>> { Success = true, Data = dtos };
             }
             catch (Exception ex)
@@ -251,7 +251,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(_context, 0, customerCode);
+                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(context, 0, customerCode);
                 if (err != null)
                     return new ApiResponse<List<TicketResponseDto>> { Success = false, Message = err };
                 return await GetByCustomerId(cid);
@@ -267,9 +267,9 @@ namespace CRM.Server.Services
             try
             {
                 var st = Enum.Parse<TicketStatus>(status, true);
-                var list = await _context.Tickets.Include(t => t.Customer).Where(t => t.Status == st).OrderByDescending(t => t.CreatedAt).ToListAsync();
+                var list = await context.Tickets.Include(t => t.Customer).Where(t => t.Status == st).OrderByDescending(t => t.CreatedAt).ToListAsync();
                 var dtos = list.Select(Map).ToList();
-                await EnrichTicketsAsync(_context, dtos);
+                await EnrichTicketsAsync(context, dtos);
                 return new ApiResponse<List<TicketResponseDto>> { Success = true, Data = dtos };
             }
             catch
@@ -282,9 +282,9 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Tickets.Include(t => t.Customer).Where(t => t.AssignedTo == userId).OrderByDescending(t => t.CreatedAt).ToListAsync();
+                var list = await context.Tickets.Include(t => t.Customer).Where(t => t.AssignedTo == userId).OrderByDescending(t => t.CreatedAt).ToListAsync();
                 var dtos = list.Select(Map).ToList();
-                await EnrichTicketsAsync(_context, dtos);
+                await EnrichTicketsAsync(context, dtos);
                 return new ApiResponse<List<TicketResponseDto>> { Success = true, Data = dtos };
             }
             catch (Exception ex)
@@ -297,11 +297,11 @@ namespace CRM.Server.Services
         {
             try
             {
-                var (custCode, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, dto.CustomerId, dto.CustomerCode);
+                var (custCode, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(context, dto.CustomerId, dto.CustomerCode);
                 if (cErr != null)
                     return new ApiResponse<TicketResponseDto> { Success = false, Message = cErr };
                 var (locationId, lErr) = await EntityCodeResolution.ResolveRequiredLocationIdAsync(
-                    _context, custCode, dto.LocationId, dto.LocationCode);
+                    context, custCode, dto.LocationId, dto.LocationCode);
                 if (lErr != null)
                     return new ApiResponse<TicketResponseDto> { Success = false, Message = lErr };
 
@@ -326,14 +326,14 @@ namespace CRM.Server.Services
                     ModifiedAt = now,
                     ModifiedBy = AuditUserIds.System
                 };
-                _context.Tickets.Add(ticket);
-                await _context.SaveChangesAsync();
-                await _context.Entry(ticket).Reference(t => t.Customer).LoadAsync();
+                context.Tickets.Add(ticket);
+                await context.SaveChangesAsync();
+                await context.Entry(ticket).Reference(t => t.Customer).LoadAsync();
                 var actorCreate = ResolveTimelineActor(dto.ChangedByUserId, ticket.AssignedTo);
                 AddTicketTimelineRow(ticket.Id, actorCreate, TimelineTypeSystem, BuildCreateTimelineNotes(ticket));
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
                 var created = Map(ticket);
-                await EnrichTicketsAsync(_context, new List<TicketResponseDto> { created });
+                await EnrichTicketsAsync(context, new List<TicketResponseDto> { created });
                 return new ApiResponse<TicketResponseDto> { Success = true, Data = created };
             }
             catch (Exception ex)
@@ -346,7 +346,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var ticket = await _context.Tickets.Include(t => t.Customer).FirstOrDefaultAsync(t => t.Id == id);
+                var ticket = await context.Tickets.Include(t => t.Customer).FirstOrDefaultAsync(t => t.Id == id);
                 if (ticket == null) return new ApiResponse<TicketResponseDto> { Success = false, Message = "Ticket not found" };
                 var before = Snap(ticket);
                 if (!string.IsNullOrWhiteSpace(dto.Status))
@@ -357,14 +357,14 @@ namespace CRM.Server.Services
 
                 if (!string.IsNullOrWhiteSpace(dto.CustomerCode))
                 {
-                    var (cc, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, 0, dto.CustomerCode);
+                    var (cc, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(context, 0, dto.CustomerCode);
                     if (cErr != null)
                         return new ApiResponse<TicketResponseDto> { Success = false, Message = cErr };
                     ticket.CustomerCode = cc;
                 }
                 else if (dto.CustomerId.HasValue)
                 {
-                    var (cc, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, dto.CustomerId.Value, null);
+                    var (cc, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(context, dto.CustomerId.Value, null);
                     if (cErr != null)
                         return new ApiResponse<TicketResponseDto> { Success = false, Message = cErr };
                     ticket.CustomerCode = cc;
@@ -373,7 +373,7 @@ namespace CRM.Server.Services
                 if (!string.IsNullOrWhiteSpace(dto.LocationCode))
                 {
                     var (lid, lErr) = await EntityCodeResolution.ResolveRequiredLocationIdAsync(
-                        _context, ticket.CustomerCode, 0, dto.LocationCode);
+                        context, ticket.CustomerCode, 0, dto.LocationCode);
                     if (lErr != null)
                         return new ApiResponse<TicketResponseDto> { Success = false, Message = lErr };
                     ticket.LocationId = lid;
@@ -416,10 +416,10 @@ namespace CRM.Server.Services
                     AddTicketTimelineRow(ticket.Id, actorUpdate, TimelineTypeFieldUpdate, updateNotes);
                 }
 
-                await _context.SaveChangesAsync();
-                await _context.Entry(ticket).Reference(t => t.Customer).LoadAsync();
+                await context.SaveChangesAsync();
+                await context.Entry(ticket).Reference(t => t.Customer).LoadAsync();
                 var updated = Map(ticket);
-                await EnrichTicketsAsync(_context, new List<TicketResponseDto> { updated });
+                await EnrichTicketsAsync(context, new List<TicketResponseDto> { updated });
                 return new ApiResponse<TicketResponseDto> { Success = true, Data = updated };
             }
             catch (Exception ex)
@@ -432,10 +432,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var t = await _context.Tickets.FindAsync(id);
+                var t = await context.Tickets.FindAsync(id);
                 if (t == null) return new ApiResponse<bool> { Success = false, Message = "Ticket not found" };
-                _context.Tickets.Remove(t);
-                await _context.SaveChangesAsync();
+                context.Tickets.Remove(t);
+                await context.SaveChangesAsync();
                 return new ApiResponse<bool> { Success = true, Data = true };
             }
             catch (Exception ex)
@@ -448,7 +448,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var rows = await _context.TicketTimelines.Where(x => x.TicketId == ticketId)
+                var rows = await context.TicketTimelines.Where(x => x.TicketId == ticketId)
                     .OrderByDescending(x => x.CreatedAt)
                     .Select(x => new TicketTimelineEntryDto
                     {
@@ -477,7 +477,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var tk = await _context.Tickets.FindAsync(ticketId);
+                var tk = await context.Tickets.FindAsync(ticketId);
                 if (tk == null) return new ApiResponse<TicketTimelineEntryDto> { Success = false, Message = "Ticket not found" };
                 var now = DateTime.UtcNow;
                 var e = new TicketTimeline
@@ -494,8 +494,8 @@ namespace CRM.Server.Services
                     ModifiedAt = now,
                     ModifiedBy = AuditUserIds.System
                 };
-                _context.TicketTimelines.Add(e);
-                await _context.SaveChangesAsync();
+                context.TicketTimelines.Add(e);
+                await context.SaveChangesAsync();
                 return new ApiResponse<TicketTimelineEntryDto>
                 {
                     Success = true,

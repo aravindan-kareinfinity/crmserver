@@ -4,21 +4,21 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CRM.Server.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
+    [ApiController]
     public class TrademarksController : ControllerBase
     {
-        private readonly ITrademarkService _trademarkService;
+        ITrademarkService trademarkService;
 
         public TrademarksController(ITrademarkService trademarkService)
         {
-            _trademarkService = trademarkService;
+            this.trademarkService = trademarkService;
         }
 
         [HttpGet("all")]
         public async Task<ActionResult<ApiResponse<List<TrademarkResponseDto>>>> GetAll()
         {
-            var result = await _trademarkService.GetAll();
+            var result = await trademarkService.GetAll();
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -30,7 +30,7 @@ namespace CRM.Server.Controllers
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10)
         {
-            var result = await _trademarkService.GetTrademarksByCustomer(customerId, pageNumber, pageSize);
+            var result = await trademarkService.GetTrademarksByCustomer(customerId, pageNumber, pageSize);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -42,7 +42,7 @@ namespace CRM.Server.Controllers
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10)
         {
-            var result = await _trademarkService.GetTrademarksByCustomerCode(customerCode, pageNumber, pageSize);
+            var result = await trademarkService.GetTrademarksByCustomerCode(customerCode, pageNumber, pageSize);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -51,7 +51,7 @@ namespace CRM.Server.Controllers
         [HttpGet("active/{isActive:bool}")]
         public async Task<ActionResult<ApiResponse<List<TrademarkResponseDto>>>> GetTrademarksByActive(bool isActive)
         {
-            var result = await _trademarkService.GetTrademarksByActive(isActive);
+            var result = await trademarkService.GetTrademarksByActive(isActive);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -60,7 +60,7 @@ namespace CRM.Server.Controllers
         [HttpGet("{id:int}")]
         public async Task<ActionResult<ApiResponse<TrademarkResponseDto>>> GetTrademarkById(int id)
         {
-            var result = await _trademarkService.GetTrademarkById(id);
+            var result = await trademarkService.GetTrademarkById(id);
             if (!result.Success)
                 return NotFound(result);
             return Ok(result);
@@ -69,7 +69,7 @@ namespace CRM.Server.Controllers
         [HttpPost]
         public async Task<ActionResult<ApiResponse<TrademarkResponseDto>>> CreateTrademark(CreateTrademarkDto dto)
         {
-            var result = await _trademarkService.CreateTrademark(dto);
+            var result = await trademarkService.CreateTrademark(dto);
             if (!result.Success)
                 return BadRequest(result);
             return CreatedAtAction(nameof(GetTrademarkById), new { id = result.Data?.Id }, result);
@@ -78,7 +78,7 @@ namespace CRM.Server.Controllers
         [HttpPut("{id:int}")]
         public async Task<ActionResult<ApiResponse<TrademarkResponseDto>>> UpdateTrademark(int id, UpdateTrademarkDto dto)
         {
-            var result = await _trademarkService.UpdateTrademark(id, dto);
+            var result = await trademarkService.UpdateTrademark(id, dto);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -87,7 +87,7 @@ namespace CRM.Server.Controllers
         [HttpDelete("{id:int}")]
         public async Task<ActionResult<ApiResponse<bool>>> DeleteTrademark(int id)
         {
-            var result = await _trademarkService.DeleteTrademark(id);
+            var result = await trademarkService.DeleteTrademark(id);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);

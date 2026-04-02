@@ -4,15 +4,15 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CRM.Server.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
+    [ApiController]
     public class FilesController : ControllerBase
     {
-        private readonly IFileService _fileService;
+        IFileService fileService;
 
         public FilesController(IFileService fileService)
         {
-            _fileService = fileService;
+            this.fileService = fileService;
         }
 
         /// <summary>Upload an image or any binary file; returns <see cref="FileStoredResponseDto.ImageId"/>.</summary>
@@ -31,7 +31,7 @@ namespace CRM.Server.Controllers
             await file.CopyToAsync(ms);
             var bytes = ms.ToArray();
 
-            var result = await _fileService.StoreAsync(bytes, file.ContentType, createdBy, notes, parentId);
+            var result = await fileService.StoreAsync(bytes, file.ContentType, createdBy, notes, parentId);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -41,7 +41,7 @@ namespace CRM.Server.Controllers
         [HttpGet("{id:long}/content")]
         public async Task<IActionResult> GetContent(long id)
         {
-            var result = await _fileService.GetContentAsync(id);
+            var result = await fileService.GetContentAsync(id);
             if (!result.Success)
                 return NotFound(result);
             return File(result.Data.Content, result.Data.ContentType);
@@ -50,7 +50,7 @@ namespace CRM.Server.Controllers
         [HttpGet("{id:long}/metadata")]
         public async Task<ActionResult<ApiResponse<FileMetadataResponseDto>>> GetMetadata(long id)
         {
-            var result = await _fileService.GetMetadataAsync(id);
+            var result = await fileService.GetMetadataAsync(id);
             if (!result.Success)
                 return NotFound(result);
             return Ok(result);

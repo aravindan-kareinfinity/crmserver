@@ -5,15 +5,15 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CRM.Server.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
+    [ApiController]
     public class CustomersController : ControllerBase
     {
-        private readonly ICustomerService _customerService;
+        ICustomerService customerService;
 
         public CustomersController(ICustomerService customerService)
         {
-            _customerService = customerService;
+            this.customerService = customerService;
         }
 
         [HttpGet]
@@ -22,7 +22,7 @@ namespace CRM.Server.Controllers
             [FromQuery] int pageSize = 10,
             [FromQuery] string? searchTerm = null)
         {
-            var result = await _customerService.GetAllCustomers(pageNumber, pageSize, searchTerm);
+            var result = await customerService.GetAllCustomers(pageNumber, pageSize, searchTerm);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -32,7 +32,7 @@ namespace CRM.Server.Controllers
         [HttpGet("all")]
         public async Task<ActionResult<ApiResponse<List<CustomerResponseDto>>>> GetAllList()
         {
-            var result = await _customerService.GetAllCustomersList();
+            var result = await customerService.GetAllCustomersList();
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }
@@ -40,7 +40,7 @@ namespace CRM.Server.Controllers
         [HttpGet("{id:int}")]
         public async Task<ActionResult<ApiResponse<CustomerResponseDto>>> GetCustomerById(int id)
         {
-            var result = await _customerService.GetCustomerById(id);
+            var result = await customerService.GetCustomerById(id);
             if (!result.Success)
                 return NotFound(result);
             return Ok(result);
@@ -50,7 +50,7 @@ namespace CRM.Server.Controllers
         [HttpGet("by-code")]
         public async Task<ActionResult<ApiResponse<CustomerResponseDto>>> GetCustomerByCode([FromQuery] string code)
         {
-            var result = await _customerService.GetCustomerByCode(code);
+            var result = await customerService.GetCustomerByCode(code);
             if (!result.Success)
                 return NotFound(result);
             return Ok(result);
@@ -59,7 +59,7 @@ namespace CRM.Server.Controllers
         [HttpGet("type-id/{typeId:int}")]
         public async Task<ActionResult<ApiResponse<List<CustomerResponseDto>>>> GetCustomersByTypeId(int typeId)
         {
-            var result = await _customerService.GetCustomersByTypeId(typeId);
+            var result = await customerService.GetCustomersByTypeId(typeId);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -69,7 +69,7 @@ namespace CRM.Server.Controllers
         [HttpGet("type/{type}")]
         public async Task<ActionResult<ApiResponse<List<CustomerResponseDto>>>> GetCustomersByType(string type)
         {
-            var result = await _customerService.GetCustomersByType(type);
+            var result = await customerService.GetCustomersByType(type);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -81,9 +81,9 @@ namespace CRM.Server.Controllers
         [HttpGet("contacts")]
         public async Task<ActionResult<ApiResponse<List<CustomerResponseDto>>>> GetContacts()
         {
-            var lead = await _customerService.GetCustomersByType("lead");
+            var lead = await customerService.GetCustomersByType("lead");
             if (!lead.Success) return BadRequest(lead);
-            var prospect = await _customerService.GetCustomersByType("prospect");
+            var prospect = await customerService.GetCustomersByType("prospect");
             if (!prospect.Success) return BadRequest(prospect);
 
             var merged = lead.Data.Concat(prospect.Data)
@@ -98,7 +98,7 @@ namespace CRM.Server.Controllers
         [HttpGet("{customerId:int}/timeline")]
         public async Task<ActionResult<ApiResponse<List<CustomerTimelineEntryDto>>>> GetCustomerTimeline(int customerId)
         {
-            var result = await _customerService.GetCustomerTimeline(customerId);
+            var result = await customerService.GetCustomerTimeline(customerId);
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }
@@ -106,7 +106,7 @@ namespace CRM.Server.Controllers
         [HttpGet("timeline/by-code")]
         public async Task<ActionResult<ApiResponse<List<CustomerTimelineEntryDto>>>> GetCustomerTimelineByCode([FromQuery] string customerCode)
         {
-            var result = await _customerService.GetCustomerTimelineByCustomerCode(customerCode);
+            var result = await customerService.GetCustomerTimelineByCustomerCode(customerCode);
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }
@@ -116,7 +116,7 @@ namespace CRM.Server.Controllers
             int customerId,
             [FromBody] AddTimelineEntryDto dto)
         {
-            var result = await _customerService.AddCustomerTimelineEntry(customerId, dto);
+            var result = await customerService.AddCustomerTimelineEntry(customerId, dto);
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }
@@ -126,7 +126,7 @@ namespace CRM.Server.Controllers
             [FromQuery] string customerCode,
             [FromBody] AddTimelineEntryDto dto)
         {
-            var result = await _customerService.AddCustomerTimelineEntryByCustomerCode(customerCode, dto);
+            var result = await customerService.AddCustomerTimelineEntryByCustomerCode(customerCode, dto);
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }
@@ -155,7 +155,7 @@ namespace CRM.Server.Controllers
                 });
 
             await using var stream = file.OpenReadStream();
-            var result = await _customerService.ImportCustomersFromSpreadsheetAsync(stream, userId);
+            var result = await customerService.ImportCustomersFromSpreadsheetAsync(stream, userId);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -164,7 +164,7 @@ namespace CRM.Server.Controllers
         [HttpPost]
         public async Task<ActionResult<ApiResponse<CustomerResponseDto>>> CreateCustomer(CreateCustomerDto dto)
         {
-            var result = await _customerService.CreateCustomer(dto);
+            var result = await customerService.CreateCustomer(dto);
             if (!result.Success)
                 return BadRequest(result);
             return CreatedAtAction(nameof(GetCustomerById), new { id = result.Data?.Id }, result);
@@ -173,7 +173,7 @@ namespace CRM.Server.Controllers
         [HttpPut("{id:int}")]
         public async Task<ActionResult<ApiResponse<CustomerResponseDto>>> UpdateCustomer(int id, UpdateCustomerDto dto)
         {
-            var result = await _customerService.UpdateCustomer(id, dto);
+            var result = await customerService.UpdateCustomer(id, dto);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -182,7 +182,7 @@ namespace CRM.Server.Controllers
         [HttpDelete("{id:int}")]
         public async Task<ActionResult<ApiResponse<bool>>> DeleteCustomer(int id)
         {
-            var result = await _customerService.DeleteCustomer(id);
+            var result = await customerService.DeleteCustomer(id);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);

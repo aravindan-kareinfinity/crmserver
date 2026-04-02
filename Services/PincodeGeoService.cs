@@ -19,13 +19,13 @@ namespace CRM.Server.Services
     public class PincodeGeoService : IPincodeGeoService
     {
         private const string HttpClientName = "PostalPincode";
-        private readonly IHttpClientFactory _httpFactory;
-        private readonly CrmDbContext _db;
+        IHttpClientFactory httpFactory;
+        CrmDbContext db;
 
         public PincodeGeoService(IHttpClientFactory httpFactory, CrmDbContext db)
         {
-            _httpFactory = httpFactory;
-            _db = db;
+            this.httpFactory = httpFactory;
+            this.db = db;
         }
 
         public async Task<ApiResponse<PincodeResolveResponseDto>> ResolveAsync(string pincode)
@@ -39,7 +39,7 @@ namespace CRM.Server.Services
             HttpResponseMessage response;
             try
             {
-                var client = _httpFactory.CreateClient(HttpClientName);
+                var client = httpFactory.CreateClient(HttpClientName);
                 response = await client.GetAsync(new Uri($"pincode/{p}", UriKind.Relative));
             }
             catch (Exception ex)
@@ -128,7 +128,7 @@ namespace CRM.Server.Services
             var lowerLabel = label.ToLowerInvariant();
             var lowerSlug = slug.ToLowerInvariant();
 
-            var existing = await _db.ReferenceEntries
+            var existing = await db.ReferenceEntries
                 .Where(r => r.Category == category && r.IsActive)
                 .FirstOrDefaultAsync(r =>
                     r.Value.ToLower() == lowerSlug ||
@@ -137,7 +137,7 @@ namespace CRM.Server.Services
             if (existing != null)
                 return (existing.Id, false);
 
-            var maxSort = await _db.ReferenceEntries
+            var maxSort = await db.ReferenceEntries
                 .Where(r => r.Category == category)
                 .Select(r => (int?)r.SortOrder)
                 .MaxAsync() ?? 0;
@@ -150,8 +150,8 @@ namespace CRM.Server.Services
                 IsActive = true,
                 SortOrder = maxSort + 1
             };
-            _db.ReferenceEntries.Add(e);
-            await _db.SaveChangesAsync();
+            db.ReferenceEntries.Add(e);
+            await db.SaveChangesAsync();
             return (e.Id, true);
         }
     }

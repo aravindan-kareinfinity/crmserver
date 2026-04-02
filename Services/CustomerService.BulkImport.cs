@@ -69,8 +69,8 @@ namespace CRM.Server.Services
                     return fail($"Missing required column: {h}");
             }
 
-            var entries = await _context.ReferenceEntries.Where(e => e.IsActive).ToListAsync();
-            var existingRows = await _context.Customers.AsNoTracking()
+            var entries = await context.ReferenceEntries.Where(e => e.IsActive).ToListAsync();
+            var existingRows = await context.Customers.AsNoTracking()
                 .Select(c => new ExistingCustomerSnapshot(c.Id, c.RegName, c.Email, c.Mobile))
                 .ToListAsync();
 
@@ -113,7 +113,7 @@ namespace CRM.Server.Services
             if (staged.Count == 0)
                 return fail("No data rows to import (empty sheet?)");
 
-            await using var tx = await _context.Database.BeginTransactionAsync();
+            await using var tx = await context.Database.BeginTransactionAsync();
             try
             {
                 var now = DateTime.UtcNow;
@@ -135,11 +135,11 @@ namespace CRM.Server.Services
                         ModifiedAt = now,
                         ModifiedBy = auditUserId
                     });
-                    _context.Customers.Add(customer);
+                    context.Customers.Add(customer);
                     addedCustomers.Add(customer);
                 }
 
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
                 await tx.CommitAsync();
 
                 var bulkCreatorNames = await LoadCreatorDisplayNamesAsync(CustomerDisplayUserIdsMany(addedCustomers));

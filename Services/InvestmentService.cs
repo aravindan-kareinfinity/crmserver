@@ -29,11 +29,11 @@ namespace CRM.Server.Services
 
     public class InvestmentService : IInvestmentService
     {
-        private readonly CrmDbContext _context;
+        CrmDbContext context;
 
         public InvestmentService(CrmDbContext context)
         {
-            _context = context;
+            this.context = context;
         }
 
         private static async Task EnrichInvestmentsAsync(CrmDbContext ctx, List<InvestmentResponseDto> rows) =>
@@ -65,9 +65,9 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Investments.Include(i => i.Customer).OrderByDescending(i => i.CreatedAt).ToListAsync();
+                var list = await context.Investments.Include(i => i.Customer).OrderByDescending(i => i.CreatedAt).ToListAsync();
                 var dtos = list.Select(Map).ToList();
-                await EnrichInvestmentsAsync(_context, dtos);
+                await EnrichInvestmentsAsync(context, dtos);
                 return new ApiResponse<List<InvestmentResponseDto>> { Success = true, Data = dtos };
             }
             catch (Exception ex)
@@ -80,10 +80,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var i = await _context.Investments.Include(x => x.Customer).FirstOrDefaultAsync(x => x.Id == id);
+                var i = await context.Investments.Include(x => x.Customer).FirstOrDefaultAsync(x => x.Id == id);
                 if (i == null) return new ApiResponse<InvestmentResponseDto> { Success = false, Message = "Investment not found" };
                 var one = Map(i);
-                await EnrichInvestmentsAsync(_context, new List<InvestmentResponseDto> { one });
+                await EnrichInvestmentsAsync(context, new List<InvestmentResponseDto> { one });
                 return new ApiResponse<InvestmentResponseDto> { Success = true, Data = one };
             }
             catch (Exception ex)
@@ -96,7 +96,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(_context, customerId);
+                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(context, customerId);
                 if (string.IsNullOrEmpty(cc))
                     return new ApiResponse<PaginatedResponse<InvestmentResponseDto>>
                     {
@@ -109,11 +109,11 @@ namespace CRM.Server.Services
                             PageSize = pageSize
                         }
                     };
-                var q = _context.Investments.Include(i => i.Customer).Where(i => i.CustomerCode == cc);
+                var q = context.Investments.Include(i => i.Customer).Where(i => i.CustomerCode == cc);
                 var total = await q.CountAsync();
                 var items = await q.OrderByDescending(i => i.CreatedAt).Skip((pageNumber - 1) * pageSize).Take(pageSize).ToListAsync();
                 var dtos = items.Select(Map).ToList();
-                await EnrichInvestmentsAsync(_context, dtos);
+                await EnrichInvestmentsAsync(context, dtos);
                 return new ApiResponse<PaginatedResponse<InvestmentResponseDto>>
                 {
                     Success = true,
@@ -136,12 +136,12 @@ namespace CRM.Server.Services
         {
             try
             {
-                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(_context, customerId);
+                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(context, customerId);
                 if (string.IsNullOrEmpty(cc))
                     return new ApiResponse<List<InvestmentResponseDto>> { Success = true, Data = new List<InvestmentResponseDto>() };
-                var list = await _context.Investments.Include(i => i.Customer).Where(i => i.CustomerCode == cc).OrderByDescending(i => i.CreatedAt).ToListAsync();
+                var list = await context.Investments.Include(i => i.Customer).Where(i => i.CustomerCode == cc).OrderByDescending(i => i.CreatedAt).ToListAsync();
                 var dtos = list.Select(Map).ToList();
-                await EnrichInvestmentsAsync(_context, dtos);
+                await EnrichInvestmentsAsync(context, dtos);
                 return new ApiResponse<List<InvestmentResponseDto>> { Success = true, Data = dtos };
             }
             catch (Exception ex)
@@ -154,7 +154,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(_context, 0, customerCode);
+                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(context, 0, customerCode);
                 if (err != null)
                     return new ApiResponse<List<InvestmentResponseDto>> { Success = false, Message = err };
                 return await GetByCustomerId(cid);
@@ -172,7 +172,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(_context, 0, customerCode);
+                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(context, 0, customerCode);
                 if (err != null)
                     return new ApiResponse<PaginatedResponse<InvestmentResponseDto>> { Success = false, Message = err };
                 return await GetInvestmentsByCustomer(cid, pageNumber, pageSize);
@@ -187,9 +187,9 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Investments.Include(i => i.Customer).Where(i => i.StaffId == staffId).OrderByDescending(i => i.CreatedAt).ToListAsync();
+                var list = await context.Investments.Include(i => i.Customer).Where(i => i.StaffId == staffId).OrderByDescending(i => i.CreatedAt).ToListAsync();
                 var dtos = list.Select(Map).ToList();
-                await EnrichInvestmentsAsync(_context, dtos);
+                await EnrichInvestmentsAsync(context, dtos);
                 return new ApiResponse<List<InvestmentResponseDto>> { Success = true, Data = dtos };
             }
             catch (Exception ex)
@@ -202,11 +202,11 @@ namespace CRM.Server.Services
         {
             try
             {
-                var (custCode, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, dto.CustomerId, dto.CustomerCode);
+                var (custCode, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(context, dto.CustomerId, dto.CustomerCode);
                 if (cErr != null)
                     return new ApiResponse<InvestmentResponseDto> { Success = false, Message = cErr };
                 var (locationId, lErr) = await EntityCodeResolution.ResolveRequiredLocationIdAsync(
-                    _context, custCode, dto.LocationId, dto.LocationCode);
+                    context, custCode, dto.LocationId, dto.LocationCode);
                 if (lErr != null)
                     return new ApiResponse<InvestmentResponseDto> { Success = false, Message = lErr };
 
@@ -229,11 +229,11 @@ namespace CRM.Server.Services
                     ModifiedAt = now,
                     ModifiedBy = AuditUserIds.System
                 };
-                _context.Investments.Add(inv);
-                await _context.SaveChangesAsync();
-                await _context.Entry(inv).Reference(x => x.Customer).LoadAsync();
+                context.Investments.Add(inv);
+                await context.SaveChangesAsync();
+                await context.Entry(inv).Reference(x => x.Customer).LoadAsync();
                 var created = Map(inv);
-                await EnrichInvestmentsAsync(_context, new List<InvestmentResponseDto> { created });
+                await EnrichInvestmentsAsync(context, new List<InvestmentResponseDto> { created });
                 return new ApiResponse<InvestmentResponseDto> { Success = true, Data = created };
             }
             catch (Exception ex)
@@ -246,19 +246,19 @@ namespace CRM.Server.Services
         {
             try
             {
-                var i = await _context.Investments.Include(x => x.Customer).FirstOrDefaultAsync(x => x.Id == id);
+                var i = await context.Investments.Include(x => x.Customer).FirstOrDefaultAsync(x => x.Id == id);
                 if (i == null) return new ApiResponse<InvestmentResponseDto> { Success = false, Message = "Investment not found" };
 
                 if (!string.IsNullOrWhiteSpace(dto.CustomerCode))
                 {
-                    var (cc, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, 0, dto.CustomerCode);
+                    var (cc, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(context, 0, dto.CustomerCode);
                     if (cErr != null)
                         return new ApiResponse<InvestmentResponseDto> { Success = false, Message = cErr };
                     i.CustomerCode = cc;
                 }
                 else if (dto.CustomerId.HasValue)
                 {
-                    var (cc, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, dto.CustomerId.Value, null);
+                    var (cc, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(context, dto.CustomerId.Value, null);
                     if (cErr != null)
                         return new ApiResponse<InvestmentResponseDto> { Success = false, Message = cErr };
                     i.CustomerCode = cc;
@@ -267,7 +267,7 @@ namespace CRM.Server.Services
                 if (!string.IsNullOrWhiteSpace(dto.LocationCode))
                 {
                     var (lid, lErr) = await EntityCodeResolution.ResolveRequiredLocationIdAsync(
-                        _context, i.CustomerCode, 0, dto.LocationCode);
+                        context, i.CustomerCode, 0, dto.LocationCode);
                     if (lErr != null)
                         return new ApiResponse<InvestmentResponseDto> { Success = false, Message = lErr };
                     i.LocationId = lid;
@@ -293,10 +293,10 @@ namespace CRM.Server.Services
                 if (dto.NeedsClaim.HasValue) i.NeedsClaim = dto.NeedsClaim.Value;
                 i.ModifiedAt = DateTime.UtcNow;
                 i.ModifiedBy = AuditUserIds.System;
-                await _context.SaveChangesAsync();
-                await _context.Entry(i).Reference(x => x.Customer).LoadAsync();
+                await context.SaveChangesAsync();
+                await context.Entry(i).Reference(x => x.Customer).LoadAsync();
                 var updated = Map(i);
-                await EnrichInvestmentsAsync(_context, new List<InvestmentResponseDto> { updated });
+                await EnrichInvestmentsAsync(context, new List<InvestmentResponseDto> { updated });
                 return new ApiResponse<InvestmentResponseDto> { Success = true, Data = updated };
             }
             catch (Exception ex)
@@ -309,10 +309,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var i = await _context.Investments.FindAsync(id);
+                var i = await context.Investments.FindAsync(id);
                 if (i == null) return new ApiResponse<bool> { Success = false, Message = "Investment not found" };
-                _context.Investments.Remove(i);
-                await _context.SaveChangesAsync();
+                context.Investments.Remove(i);
+                await context.SaveChangesAsync();
                 return new ApiResponse<bool> { Success = true, Data = true };
             }
             catch (Exception ex)
@@ -325,10 +325,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(_context, customerId);
+                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(context, customerId);
                 if (string.IsNullOrEmpty(cc))
                     return new ApiResponse<decimal> { Success = true, Data = 0 };
-                var total = await _context.Investments.Where(i => i.CustomerCode == cc).SumAsync(i => i.Amount);
+                var total = await context.Investments.Where(i => i.CustomerCode == cc).SumAsync(i => i.Amount);
                 return new ApiResponse<decimal> { Success = true, Data = total };
             }
             catch (Exception ex)
@@ -341,7 +341,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(_context, 0, customerCode);
+                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(context, 0, customerCode);
                 if (err != null)
                     return new ApiResponse<decimal> { Success = false, Message = err };
                 return await GetTotalInvestmentByCustomer(cid);
@@ -356,7 +356,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var rows = await _context.InvestmentTimelines.Where(t => t.InvestmentId == investmentId)
+                var rows = await context.InvestmentTimelines.Where(t => t.InvestmentId == investmentId)
                     .OrderByDescending(t => t.CreatedAt)
                     .Select(t => new InvestmentTimelineEntryDto
                     {
@@ -384,7 +384,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var parent = await _context.Investments.FindAsync(investmentId);
+                var parent = await context.Investments.FindAsync(investmentId);
                 if (parent == null) return new ApiResponse<InvestmentTimelineEntryDto> { Success = false, Message = "Investment not found" };
                 var now = DateTime.UtcNow;
                 var e = new InvestmentTimeline
@@ -400,8 +400,8 @@ namespace CRM.Server.Services
                     ModifiedAt = now,
                     ModifiedBy = AuditUserIds.System
                 };
-                _context.InvestmentTimelines.Add(e);
-                await _context.SaveChangesAsync();
+                context.InvestmentTimelines.Add(e);
+                await context.SaveChangesAsync();
                 return new ApiResponse<InvestmentTimelineEntryDto>
                 {
                     Success = true,
@@ -432,10 +432,10 @@ namespace CRM.Server.Services
             if (dto.InvestmentId <= 0)
                 return new ApiResponse<InvestmentResponseDto> { Success = false, Message = "investmentId is required" };
 
-            await using var tx = await _context.Database.BeginTransactionAsync();
+            await using var tx = await context.Database.BeginTransactionAsync();
             try
             {
-                var inv = await _context.Investments.Include(i => i.Customer).FirstOrDefaultAsync(i => i.Id == dto.InvestmentId);
+                var inv = await context.Investments.Include(i => i.Customer).FirstOrDefaultAsync(i => i.Id == dto.InvestmentId);
                 if (inv == null)
                     return new ApiResponse<InvestmentResponseDto> { Success = false, Message = "Investment not found" };
                 if (inv.ClaimedFully)
@@ -461,7 +461,7 @@ namespace CRM.Server.Services
                 inv.ModifiedAt = now;
                 inv.ModifiedBy = auditUserId;
 
-                _context.InvestmentTimelines.Add(new InvestmentTimeline
+                context.InvestmentTimelines.Add(new InvestmentTimeline
                 {
                     InvestmentId = inv.Id,
                     Type = 1,
@@ -473,11 +473,11 @@ namespace CRM.Server.Services
                     ModifiedBy = auditUserId
                 });
 
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
                 await tx.CommitAsync();
 
                 var updated = Map(inv);
-                await EnrichInvestmentsAsync(_context, new List<InvestmentResponseDto> { updated });
+                await EnrichInvestmentsAsync(context, new List<InvestmentResponseDto> { updated });
                 return new ApiResponse<InvestmentResponseDto> { Success = true, Data = updated };
             }
             catch (Exception ex)
@@ -491,7 +491,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var q = _context.Investments.AsNoTracking()
+                var q = context.Investments.AsNoTracking()
                     .Where(i => i.ClaimedFully && i.ClaimedAt != null);
 
                 q = q.Where(i => i.ClaimedAt >= startUtc && i.ClaimedAt <= endUtc);
@@ -520,7 +520,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var q = _context.Investments.AsNoTracking()
+                var q = context.Investments.AsNoTracking()
                     .Where(i => i.ClaimedFully && i.ClaimedAt != null);
 
                 q = q.Where(i => i.ClaimedAt >= startUtc && i.ClaimedAt <= endUtc);

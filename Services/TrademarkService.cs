@@ -19,11 +19,11 @@ namespace CRM.Server.Services
 
     public class TrademarkService : ITrademarkService
     {
-        private readonly CrmDbContext _context;
+        CrmDbContext context;
 
         public TrademarkService(CrmDbContext context)
         {
-            _context = context;
+            this.context = context;
         }
 
         private static TrademarkResponseDto Map(Trademark t) => new()
@@ -63,7 +63,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Trademarks
+                var list = await context.Trademarks
                     .AsNoTracking()
                     .Include(t => t.Customer)
                     .Include(t => t.Location)
@@ -82,7 +82,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(_context, customerId);
+                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(context, customerId);
                 if (string.IsNullOrEmpty(cc))
                     return new ApiResponse<PaginatedResponse<TrademarkResponseDto>>
                     {
@@ -95,7 +95,7 @@ namespace CRM.Server.Services
                             PageSize = pageSize
                         }
                     };
-                var q = _context.Trademarks.Include(t => t.Customer).Include(t => t.Location).Where(t => t.CustomerCode == cc);
+                var q = context.Trademarks.Include(t => t.Customer).Include(t => t.Location).Where(t => t.CustomerCode == cc);
                 var total = await q.CountAsync();
                 var items = await q.OrderByDescending(t => t.CreatedAt).Skip((pageNumber - 1) * pageSize).Take(pageSize).ToListAsync();
                 var dtos = items.Select(Map).ToList();
@@ -121,7 +121,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var t = await _context.Trademarks
+                var t = await context.Trademarks
                     .AsNoTracking()
                     .Include(x => x.Customer)
                     .Include(x => x.Location)
@@ -140,7 +140,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Trademarks
+                var list = await context.Trademarks
                     .Include(t => t.Customer)
                     .Include(t => t.Location)
                     .Where(t => t.IsActive == isActive)
@@ -162,7 +162,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(_context, 0, customerCode);
+                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(context, 0, customerCode);
                 if (err != null)
                     return new ApiResponse<PaginatedResponse<TrademarkResponseDto>> { Success = false, Message = err };
                 return await GetTrademarksByCustomer(cid, pageNumber, pageSize);
@@ -177,11 +177,11 @@ namespace CRM.Server.Services
         {
             try
             {
-                var (custCode, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, dto.CustomerId, dto.CustomerCode);
+                var (custCode, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(context, dto.CustomerId, dto.CustomerCode);
                 if (cErr != null)
                     return new ApiResponse<TrademarkResponseDto> { Success = false, Message = cErr };
                 var (locationId, lErr) = await EntityCodeResolution.ResolveRequiredLocationIdAsync(
-                    _context, custCode, dto.LocationId, dto.LocationCode);
+                    context, custCode, dto.LocationId, dto.LocationCode);
                 if (lErr != null)
                     return new ApiResponse<TrademarkResponseDto> { Success = false, Message = lErr };
 
@@ -215,10 +215,10 @@ namespace CRM.Server.Services
                     ModifiedAt = now,
                     ModifiedBy = AuditUserIds.System
                 };
-                _context.Trademarks.Add(t);
-                await _context.SaveChangesAsync();
-                await _context.Entry(t).Reference(x => x.Customer).LoadAsync();
-                await _context.Entry(t).Reference(x => x.Location).LoadAsync();
+                context.Trademarks.Add(t);
+                await context.SaveChangesAsync();
+                await context.Entry(t).Reference(x => x.Customer).LoadAsync();
+                await context.Entry(t).Reference(x => x.Location).LoadAsync();
                 var created = Map(t);
                 return new ApiResponse<TrademarkResponseDto> { Success = true, Data = created };
             }
@@ -232,19 +232,19 @@ namespace CRM.Server.Services
         {
             try
             {
-                var t = await _context.Trademarks.Include(x => x.Customer).Include(x => x.Location).FirstOrDefaultAsync(x => x.Id == id);
+                var t = await context.Trademarks.Include(x => x.Customer).Include(x => x.Location).FirstOrDefaultAsync(x => x.Id == id);
                 if (t == null) return new ApiResponse<TrademarkResponseDto> { Success = false, Message = "Trademark not found" };
 
                 if (!string.IsNullOrWhiteSpace(dto.CustomerCode))
                 {
-                    var (cc, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, 0, dto.CustomerCode);
+                    var (cc, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(context, 0, dto.CustomerCode);
                     if (cErr != null)
                         return new ApiResponse<TrademarkResponseDto> { Success = false, Message = cErr };
                     t.CustomerCode = cc;
                 }
                 else
                 {
-                    var (cc, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, dto.CustomerId, null);
+                    var (cc, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(context, dto.CustomerId, null);
                     if (cErr != null)
                         return new ApiResponse<TrademarkResponseDto> { Success = false, Message = cErr };
                     t.CustomerCode = cc;
@@ -253,7 +253,7 @@ namespace CRM.Server.Services
                 if (!string.IsNullOrWhiteSpace(dto.LocationCode))
                 {
                     var (lid, lErr) = await EntityCodeResolution.ResolveRequiredLocationIdAsync(
-                        _context, t.CustomerCode, 0, dto.LocationCode);
+                        context, t.CustomerCode, 0, dto.LocationCode);
                     if (lErr != null)
                         return new ApiResponse<TrademarkResponseDto> { Success = false, Message = lErr };
                     t.LocationId = lid;
@@ -282,9 +282,9 @@ namespace CRM.Server.Services
                 t.Remarks = dto.Remarks;
                 t.ModifiedAt = DateTime.UtcNow;
                 t.ModifiedBy = AuditUserIds.System;
-                await _context.SaveChangesAsync();
-                await _context.Entry(t).Reference(x => x.Customer).LoadAsync();
-                await _context.Entry(t).Reference(x => x.Location).LoadAsync();
+                await context.SaveChangesAsync();
+                await context.Entry(t).Reference(x => x.Customer).LoadAsync();
+                await context.Entry(t).Reference(x => x.Location).LoadAsync();
                 var updated = Map(t);
                 return new ApiResponse<TrademarkResponseDto> { Success = true, Data = updated };
             }
@@ -298,10 +298,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var t = await _context.Trademarks.FindAsync(id);
+                var t = await context.Trademarks.FindAsync(id);
                 if (t == null) return new ApiResponse<bool> { Success = false, Message = "Trademark not found" };
-                _context.Trademarks.Remove(t);
-                await _context.SaveChangesAsync();
+                context.Trademarks.Remove(t);
+                await context.SaveChangesAsync();
                 return new ApiResponse<bool> { Success = true, Data = true };
             }
             catch (Exception ex)

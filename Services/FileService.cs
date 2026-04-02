@@ -21,11 +21,11 @@ namespace CRM.Server.Services
 
     public class FileService : IFileService
     {
-        private readonly CrmDbContext _context;
+        CrmDbContext context;
 
         public FileService(CrmDbContext context)
         {
-            _context = context;
+            this.context = context;
         }
 
         public async Task<ApiResponse<FileStoredResponseDto>> StoreAsync(
@@ -54,8 +54,8 @@ namespace CRM.Server.Services
                     Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim(),
                     ParentId = parentId
                 };
-                _context.Files.Add(row);
-                await _context.SaveChangesAsync();
+                context.Files.Add(row);
+                await context.SaveChangesAsync();
                 return new ApiResponse<FileStoredResponseDto>
                 {
                     Success = true,
@@ -72,7 +72,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var row = await _context.Files.AsNoTracking()
+                var row = await context.Files.AsNoTracking()
                     .FirstOrDefaultAsync(f => f.Id == id && f.IsActive && !f.IsSuspended);
                 if (row == null)
                     return new ApiResponse<(byte[] Content, string ContentType)> { Success = false, Message = "File not found" };
@@ -93,7 +93,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var row = await _context.Files.AsNoTracking()
+                var row = await context.Files.AsNoTracking()
                     .FirstOrDefaultAsync(f => f.Id == id);
                 if (row == null)
                     return new ApiResponse<FileMetadataResponseDto> { Success = false, Message = "File not found" };

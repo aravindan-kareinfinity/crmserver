@@ -4,21 +4,21 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CRM.Server.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
+    [ApiController]
     public class RolesController : ControllerBase
     {
-        private readonly IRoleService _roleService;
+        IRoleService roleService;
 
         public RolesController(IRoleService roleService)
         {
-            _roleService = roleService;
+            this.roleService = roleService;
         }
 
         [HttpGet]
         public async Task<ActionResult<ApiResponse<List<RoleResponseDto>>>> GetAll()
         {
-            var result = await _roleService.GetAll();
+            var result = await roleService.GetAll();
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -27,7 +27,7 @@ namespace CRM.Server.Controllers
         [HttpGet("{id:int}")]
         public async Task<ActionResult<ApiResponse<RoleResponseDto>>> GetById(int id)
         {
-            var result = await _roleService.GetById(id);
+            var result = await roleService.GetById(id);
             if (!result.Success)
                 return NotFound(result);
             return Ok(result);
@@ -36,7 +36,7 @@ namespace CRM.Server.Controllers
         [HttpPost]
         public async Task<ActionResult<ApiResponse<RoleResponseDto>>> Create([FromBody] CreateRoleDto dto)
         {
-            var result = await _roleService.Create(dto);
+            var result = await roleService.Create(dto);
             if (!result.Success)
                 return BadRequest(result);
             return CreatedAtAction(nameof(GetById), new { id = result.Data?.Id }, result);
@@ -45,7 +45,7 @@ namespace CRM.Server.Controllers
         [HttpPut("{id:int}")]
         public async Task<ActionResult<ApiResponse<RoleResponseDto>>> Update(int id, [FromBody] UpdateRoleDto dto)
         {
-            var result = await _roleService.Update(id, dto);
+            var result = await roleService.Update(id, dto);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -54,7 +54,7 @@ namespace CRM.Server.Controllers
         [HttpDelete("{id:int}")]
         public async Task<ActionResult<ApiResponse<bool>>> Delete(int id)
         {
-            var result = await _roleService.Delete(id);
+            var result = await roleService.Delete(id);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);

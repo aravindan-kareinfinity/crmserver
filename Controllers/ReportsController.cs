@@ -4,21 +4,21 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CRM.Server.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
+    [ApiController]
     public class ReportsController : ControllerBase
     {
-        private readonly IReportService _reportService;
+        IReportService reportService;
 
         public ReportsController(IReportService reportService)
         {
-            _reportService = reportService;
+            this.reportService = reportService;
         }
 
         [HttpGet]
         public async Task<ActionResult<ApiResponse<List<ReportResponseDto>>>> GetAll()
         {
-            var result = await _reportService.GetAll();
+            var result = await reportService.GetAll();
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -27,7 +27,7 @@ namespace CRM.Server.Controllers
         [HttpGet("{id:int}")]
         public async Task<ActionResult<ApiResponse<ReportResponseDto>>> GetById(int id)
         {
-            var result = await _reportService.GetById(id);
+            var result = await reportService.GetById(id);
             if (!result.Success)
                 return NotFound(result);
             return Ok(result);
@@ -36,7 +36,7 @@ namespace CRM.Server.Controllers
         [HttpPost]
         public async Task<ActionResult<ApiResponse<ReportResponseDto>>> Create([FromBody] CreateReportDto dto)
         {
-            var result = await _reportService.Create(dto);
+            var result = await reportService.Create(dto);
             if (!result.Success)
                 return BadRequest(result);
             return CreatedAtAction(nameof(GetById), new { id = result.Data?.Id }, result);
@@ -45,7 +45,7 @@ namespace CRM.Server.Controllers
         [HttpPut("{id:int}")]
         public async Task<ActionResult<ApiResponse<ReportResponseDto>>> Update(int id, [FromBody] UpdateReportDto dto)
         {
-            var result = await _reportService.Update(id, dto);
+            var result = await reportService.Update(id, dto);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -54,7 +54,7 @@ namespace CRM.Server.Controllers
         [HttpDelete("{id:int}")]
         public async Task<ActionResult<ApiResponse<bool>>> Delete(int id)
         {
-            var result = await _reportService.Delete(id);
+            var result = await reportService.Delete(id);
             if (!result.Success)
                 return NotFound(result);
             return Ok(result);
@@ -64,7 +64,7 @@ namespace CRM.Server.Controllers
         [HttpPost("{id:int}/run")]
         public async Task<ActionResult<ApiResponse<ReportRunResultDto>>> Run(int id, [FromBody] RunReportRequestDto dto)
         {
-            var result = await _reportService.Run(id, dto);
+            var result = await reportService.Run(id, dto);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);

@@ -5,22 +5,22 @@ using Microsoft.AspNetCore.Mvc;
 namespace CRM.Server.Controllers
 {
     /// <summary>Parity with core-crm-suite <c>UserService.ts</c>.</summary>
-    [ApiController]
     [Route("api/[controller]")]
+    [ApiController]
     public class UsersController : ControllerBase
     {
-        private readonly IUserService _userService;
+        IUserService userService;
 
         public UsersController(IUserService userService)
         {
-            _userService = userService;
+            this.userService = userService;
         }
 
         /// <summary>Sign in with email and password. Returns userId, username, refreshToken, role.</summary>
         [HttpPost("login")]
         public async Task<ActionResult<ApiResponse<LoginResponseDto>>> Login([FromBody] LoginRequestDto dto)
         {
-            var result = await _userService.Login(dto);
+            var result = await userService.Login(dto);
             if (!result.Success)
                 return Unauthorized(result);
             return Ok(result);
@@ -29,7 +29,7 @@ namespace CRM.Server.Controllers
         [HttpGet]
         public async Task<ActionResult<ApiResponse<List<UserResponseDto>>>> GetAll()
         {
-            var result = await _userService.GetAll();
+            var result = await userService.GetAll();
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }
@@ -37,7 +37,7 @@ namespace CRM.Server.Controllers
         [HttpGet("{id:int}")]
         public async Task<ActionResult<ApiResponse<UserResponseDto>>> GetById(int id)
         {
-            var result = await _userService.GetById(id);
+            var result = await userService.GetById(id);
             if (!result.Success) return NotFound(result);
             return Ok(result);
         }
@@ -45,7 +45,7 @@ namespace CRM.Server.Controllers
         [HttpGet("email/{email}")]
         public async Task<ActionResult<ApiResponse<UserResponseDto>>> GetByEmail(string email)
         {
-            var result = await _userService.GetByEmail(email);
+            var result = await userService.GetByEmail(email);
             if (!result.Success) return NotFound(result);
             return Ok(result);
         }
@@ -53,7 +53,7 @@ namespace CRM.Server.Controllers
         [HttpGet("status/{status}")]
         public async Task<ActionResult<ApiResponse<List<UserResponseDto>>>> GetByStatus(string status)
         {
-            var result = await _userService.GetByStatus(status);
+            var result = await userService.GetByStatus(status);
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }
@@ -61,7 +61,7 @@ namespace CRM.Server.Controllers
         [HttpPost]
         public async Task<ActionResult<ApiResponse<UserResponseDto>>> Create(CreateUserDto dto)
         {
-            var result = await _userService.CreateUser(dto);
+            var result = await userService.CreateUser(dto);
             if (!result.Success) return BadRequest(result);
             return CreatedAtAction(nameof(GetById), new { id = result.Data?.Id }, result);
         }
@@ -69,7 +69,7 @@ namespace CRM.Server.Controllers
         [HttpPut("{id:int}")]
         public async Task<ActionResult<ApiResponse<UserResponseDto>>> Update(int id, UpdateUserDto dto)
         {
-            var result = await _userService.UpdateUser(id, dto);
+            var result = await userService.UpdateUser(id, dto);
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }
@@ -77,7 +77,7 @@ namespace CRM.Server.Controllers
         [HttpDelete("{id:int}")]
         public async Task<ActionResult<ApiResponse<bool>>> Delete(int id)
         {
-            var result = await _userService.DeleteUser(id);
+            var result = await userService.DeleteUser(id);
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }

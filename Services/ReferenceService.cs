@@ -21,11 +21,11 @@ namespace CRM.Server.Services
 
     public class ReferenceService : IReferenceService
     {
-        private readonly CrmDbContext _context;
+        CrmDbContext context;
 
         public ReferenceService(CrmDbContext context)
         {
-            _context = context;
+            this.context = context;
         }
 
         private static ReferenceResponseDto Map(ReferenceEntry r) => new()
@@ -44,7 +44,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.ReferenceEntries.OrderBy(r => r.Category).ThenBy(r => r.SortOrder).ToListAsync();
+                var list = await context.ReferenceEntries.OrderBy(r => r.Category).ThenBy(r => r.SortOrder).ToListAsync();
                 return new ApiResponse<List<ReferenceResponseDto>> { Success = true, Data = list.Select(Map).ToList() };
             }
             catch (Exception ex)
@@ -57,7 +57,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.ReferenceEntries
+                var list = await context.ReferenceEntries
                     .Where(r => r.Category == category && r.IsActive)
                     .OrderBy(r => r.SortOrder)
                     .ToListAsync();
@@ -73,7 +73,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var r = await _context.ReferenceEntries.FindAsync(id);
+                var r = await context.ReferenceEntries.FindAsync(id);
                 if (r == null) return new ApiResponse<ReferenceResponseDto> { Success = false, Message = "Reference not found" };
                 return new ApiResponse<ReferenceResponseDto> { Success = true, Data = Map(r) };
             }
@@ -87,7 +87,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var r = await _context.ReferenceEntries.FirstOrDefaultAsync(x => x.Value == value);
+                var r = await context.ReferenceEntries.FirstOrDefaultAsync(x => x.Value == value);
                 if (r == null) return new ApiResponse<ReferenceResponseDto> { Success = false, Message = "Reference not found" };
                 return new ApiResponse<ReferenceResponseDto> { Success = true, Data = Map(r) };
             }
@@ -101,7 +101,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var r = await _context.ReferenceEntries.FindAsync(id);
+                var r = await context.ReferenceEntries.FindAsync(id);
                 return new ApiResponse<ReferenceLabelResponseDto>
                 {
                     Success = true,
@@ -118,7 +118,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var r = await _context.ReferenceEntries.FirstOrDefaultAsync(x => x.Value == value);
+                var r = await context.ReferenceEntries.FirstOrDefaultAsync(x => x.Value == value);
                 return new ApiResponse<ReferenceLabelResponseDto>
                 {
                     Success = true,
@@ -145,8 +145,8 @@ namespace CRM.Server.Services
                     RequiresImplementation = dto.RequiresImplementation,
                     IsImplementation = dto.IsImplementation
                 };
-                _context.ReferenceEntries.Add(e);
-                await _context.SaveChangesAsync();
+                context.ReferenceEntries.Add(e);
+                await context.SaveChangesAsync();
                 return new ApiResponse<ReferenceResponseDto> { Success = true, Data = Map(e) };
             }
             catch (DbUpdateException ex)
@@ -167,7 +167,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var r = await _context.ReferenceEntries.FindAsync(id);
+                var r = await context.ReferenceEntries.FindAsync(id);
                 if (r == null) return new ApiResponse<ReferenceResponseDto> { Success = false, Message = "Reference not found" };
                 r.Category = dto.Category.Trim();
                 r.Label = dto.Label.Trim();
@@ -176,7 +176,7 @@ namespace CRM.Server.Services
                 r.SortOrder = dto.SortOrder;
                 r.RequiresImplementation = dto.RequiresImplementation;
                 r.IsImplementation = dto.IsImplementation;
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
                 return new ApiResponse<ReferenceResponseDto> { Success = true, Data = Map(r) };
             }
             catch (DbUpdateException ex)
@@ -197,10 +197,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var r = await _context.ReferenceEntries.FindAsync(id);
+                var r = await context.ReferenceEntries.FindAsync(id);
                 if (r == null) return new ApiResponse<bool> { Success = false, Message = "Reference not found" };
-                _context.ReferenceEntries.Remove(r);
-                await _context.SaveChangesAsync();
+                context.ReferenceEntries.Remove(r);
+                await context.SaveChangesAsync();
                 return new ApiResponse<bool> { Success = true, Data = true };
             }
             catch (DbUpdateException ex)

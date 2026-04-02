@@ -29,11 +29,11 @@ namespace CRM.Server.Services
 
     public partial class CustomerService : ICustomerService
     {
-        private readonly CrmDbContext _context;
+        CrmDbContext context;
 
         public CustomerService(CrmDbContext context)
         {
-            _context = context;
+            this.context = context;
         }
 
         private static string DescribeException(Exception ex)
@@ -75,7 +75,7 @@ namespace CRM.Server.Services
             if (ints.Count == 0)
                 return new Dictionary<long, string>();
 
-            var rows = await _context.Users.AsNoTracking()
+            var rows = await context.Users.AsNoTracking()
                 .Where(u => ints.Contains(u.Id))
                 .Select(u => new { u.Id, u.FirstName, u.LastName, u.Email, u.UserLoginId })
                 .ToListAsync();
@@ -122,7 +122,7 @@ namespace CRM.Server.Services
         private async Task<int> GetMaxCustomerSequenceForYearAsync(int year)
         {
             var prefix = $"{year}/";
-            var codes = await _context.Customers.AsNoTracking()
+            var codes = await context.Customers.AsNoTracking()
                 .Where(c => c.Code.StartsWith(prefix))
                 .Select(c => c.Code)
                 .ToListAsync();
@@ -148,7 +148,7 @@ namespace CRM.Server.Services
             if (count <= 0)
                 return Array.Empty<string>();
 
-            await _context.Database.ExecuteSqlInterpolatedAsync(
+            await context.Database.ExecuteSqlInterpolatedAsync(
                 $"SELECT pg_advisory_xact_lock({year}, {CustomerCodeAdvisoryLockKey2})");
 
             var max = await GetMaxCustomerSequenceForYearAsync(year);
@@ -160,7 +160,7 @@ namespace CRM.Server.Services
 
         /// <summary>Lowest active <see cref="ReferenceEntry.Id"/> in category (same rule as bulk import defaults).</summary>
         private async Task<int?> FirstActiveRefIdByCategoryAsync(string category) =>
-            await _context.ReferenceEntries.AsNoTracking()
+            await context.ReferenceEntries.AsNoTracking()
                 .Where(e => e.IsActive && e.Category == category)
                 .OrderBy(e => e.Id)
                 .Select(e => (int?)e.Id)
@@ -219,7 +219,7 @@ namespace CRM.Server.Services
 
         private async Task<string?> GetCustomerTypeValueLowerAsync(int typeId)
         {
-            var v = await _context.ReferenceEntries.AsNoTracking()
+            var v = await context.ReferenceEntries.AsNoTracking()
                 .Where(e => e.Id == typeId && e.Category == "Customer Type")
                 .Select(e => e.Value)
                 .FirstOrDefaultAsync();
@@ -238,14 +238,14 @@ namespace CRM.Server.Services
             // Some columns in customers FK to users(id) and will fail if the id doesn't exist.
             if (userId > 0 && userId <= int.MaxValue)
             {
-                var exists = await _context.Users.AsNoTracking().AnyAsync(u => u.Id == (int)userId);
+                var exists = await context.Users.AsNoTracking().AnyAsync(u => u.Id == (int)userId);
                 if (exists) return userId;
             }
 
             // Prefer the "System" user if present; otherwise skip setting FK fields.
             if (AuditUserIds.System > 0 && AuditUserIds.System <= int.MaxValue)
             {
-                var sysExists = await _context.Users.AsNoTracking().AnyAsync(u => u.Id == (int)AuditUserIds.System);
+                var sysExists = await context.Users.AsNoTracking().AnyAsync(u => u.Id == (int)AuditUserIds.System);
                 if (sysExists) return AuditUserIds.System;
             }
 
@@ -289,7 +289,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var query = _context.Customers.AsQueryable();
+                var query = context.Customers.AsQueryable();
                 if (!string.IsNullOrWhiteSpace(searchTerm))
                 {
                     query = query.Where(c =>
@@ -329,7 +329,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Customers.OrderByDescending(c => c.CreatedAt).ToListAsync();
+                var list = await context.Customers.OrderByDescending(c => c.CreatedAt).ToListAsync();
                 var creatorNames = await LoadCreatorDisplayNamesAsync(CustomerDisplayUserIdsMany(list));
                 return new ApiResponse<List<CustomerResponseDto>>
                 {
@@ -347,7 +347,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var customer = await _context.Customers.FindAsync(id);
+                var customer = await context.Customers.FindAsync(id);
                 if (customer == null)
                     return new ApiResponse<CustomerResponseDto> { Success = false, Message = "Customer not found" };
                 var creatorNames = await LoadCreatorDisplayNamesAsync(CustomerDisplayUserIds(customer));
@@ -370,7 +370,7 @@ namespace CRM.Server.Services
                 if (string.IsNullOrWhiteSpace(code))
                     return new ApiResponse<CustomerResponseDto> { Success = false, Message = "customerCode is required" };
                 var trimmed = code.Trim();
-                var customer = await _context.Customers.FirstOrDefaultAsync(c => c.Code == trimmed);
+                var customer = await context.Customers.FirstOrDefaultAsync(c => c.Code == trimmed);
                 if (customer == null)
                     return new ApiResponse<CustomerResponseDto> { Success = false, Message = "Customer not found" };
                 var creatorNames = await LoadCreatorDisplayNamesAsync(CustomerDisplayUserIds(customer));
@@ -414,7 +414,7 @@ namespace CRM.Server.Services
             const int defaultLeadTypeId = 88;
             var typeId = dto.TypeId > 0 ? dto.TypeId : defaultLeadTypeId;
 
-            await using var tx = await _context.Database.BeginTransactionAsync();
+            await using var tx = await context.Database.BeginTransactionAsync();
             try
             {
                 var now = DateTime.UtcNow;
@@ -460,8 +460,8 @@ namespace CRM.Server.Services
                     InvoiceGenerated = dto.InvoiceGenerated ?? false,
                     InvoiceNumber = string.IsNullOrWhiteSpace(dto.InvoiceNumber) ? null : dto.InvoiceNumber.Trim()
                 };
-                _context.Customers.Add(customer);
-                await _context.SaveChangesAsync();
+                context.Customers.Add(customer);
+                await context.SaveChangesAsync();
                 await tx.CommitAsync();
                 var createdNames = await LoadCreatorDisplayNamesAsync(CustomerDisplayUserIds(customer));
                 return new ApiResponse<CustomerResponseDto>
@@ -482,7 +482,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var customer = await _context.Customers.FindAsync(id);
+                var customer = await context.Customers.FindAsync(id);
                 if (customer == null)
                     return new ApiResponse<CustomerResponseDto> { Success = false, Message = "Customer not found" };
 
@@ -533,7 +533,7 @@ namespace CRM.Server.Services
 
                 customer.ModifiedAt = DateTime.UtcNow;
                 customer.ModifiedBy = auditUserId;
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
                 var updatedNames = await LoadCreatorDisplayNamesAsync(CustomerDisplayUserIds(customer));
                 return new ApiResponse<CustomerResponseDto>
                 {
@@ -551,11 +551,11 @@ namespace CRM.Server.Services
         {
             try
             {
-                var customer = await _context.Customers.FindAsync(id);
+                var customer = await context.Customers.FindAsync(id);
                 if (customer == null)
                     return new ApiResponse<bool> { Success = false, Message = "Customer not found" };
-                _context.Customers.Remove(customer);
-                await _context.SaveChangesAsync();
+                context.Customers.Remove(customer);
+                await context.SaveChangesAsync();
                 return new ApiResponse<bool> { Success = true, Data = true };
             }
             catch (Exception ex)
@@ -568,7 +568,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Customers.Where(c => c.TypeId == typeId).OrderByDescending(c => c.CreatedAt).ToListAsync();
+                var list = await context.Customers.Where(c => c.TypeId == typeId).OrderByDescending(c => c.CreatedAt).ToListAsync();
                 var creatorNames = await LoadCreatorDisplayNamesAsync(CustomerDisplayUserIdsMany(list));
                 return new ApiResponse<List<CustomerResponseDto>>
                 {
@@ -587,7 +587,7 @@ namespace CRM.Server.Services
             try
             {
                 var t = type.Trim().ToLowerInvariant();
-                var typeRefId = await _context.ReferenceEntries
+                var typeRefId = await context.ReferenceEntries
                     .Where(r => r.IsActive &&
                         r.Value.ToLower() == t &&
                         (r.Category.ToLower() == "customer type" || r.Category.ToLower() == "customer_type"))
@@ -597,7 +597,7 @@ namespace CRM.Server.Services
                 if (typeRefId == 0)
                     return new ApiResponse<List<CustomerResponseDto>> { Success = false, Message = $"Unknown customer type: {type}" };
 
-                var list = await _context.Customers.Where(c => c.TypeId == typeRefId).OrderByDescending(c => c.CreatedAt).ToListAsync();
+                var list = await context.Customers.Where(c => c.TypeId == typeRefId).OrderByDescending(c => c.CreatedAt).ToListAsync();
                 var creatorNames = await LoadCreatorDisplayNamesAsync(CustomerDisplayUserIdsMany(list));
                 return new ApiResponse<List<CustomerResponseDto>>
                 {
@@ -615,10 +615,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(_context, customerId);
+                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(context, customerId);
                 if (string.IsNullOrEmpty(cc))
                     return new ApiResponse<List<CustomerTimelineEntryDto>> { Success = true, Data = new List<CustomerTimelineEntryDto>() };
-                var rows = await _context.CustomerTimelines
+                var rows = await context.CustomerTimelines
                     .Where(x => x.CustomerCode == cc)
                     .OrderByDescending(x => x.CreatedAt)
                     .ToListAsync();
@@ -638,7 +638,7 @@ namespace CRM.Server.Services
                     ModifiedAt = x.ModifiedAt,
                     ModifiedBy = x.ModifiedBy
                 }).ToList();
-                await EntityCodeResolution.EnrichCustomerTimelineDtosAsync(_context, customerId, dtos);
+                await EntityCodeResolution.EnrichCustomerTimelineDtosAsync(context, customerId, dtos);
                 return new ApiResponse<List<CustomerTimelineEntryDto>> { Success = true, Data = dtos };
             }
             catch (Exception ex)
@@ -651,7 +651,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(_context, 0, customerCode);
+                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(context, 0, customerCode);
                 if (err != null)
                     return new ApiResponse<List<CustomerTimelineEntryDto>> { Success = false, Message = err };
                 return await GetCustomerTimeline(cid);
@@ -666,7 +666,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var c = await _context.Customers.FindAsync(customerId);
+                var c = await context.Customers.FindAsync(customerId);
                 if (c == null)
                     return new ApiResponse<CustomerTimelineEntryDto> { Success = false, Message = "Customer not found" };
                 if (string.IsNullOrWhiteSpace(c.Code))
@@ -685,8 +685,8 @@ namespace CRM.Server.Services
                     ModifiedAt = now,
                     ModifiedBy = AuditUserIds.System
                 };
-                _context.CustomerTimelines.Add(e);
-                await _context.SaveChangesAsync();
+                context.CustomerTimelines.Add(e);
+                await context.SaveChangesAsync();
                 var entryNames = await LoadCreatorDisplayNamesAsync(new[] { (long?)e.CreatedBy });
                 var entryDto = new CustomerTimelineEntryDto
                 {
@@ -703,7 +703,7 @@ namespace CRM.Server.Services
                     ModifiedAt = e.ModifiedAt,
                     ModifiedBy = e.ModifiedBy
                 };
-                await EntityCodeResolution.EnrichCustomerTimelineDtosAsync(_context, customerId, new List<CustomerTimelineEntryDto> { entryDto });
+                await EntityCodeResolution.EnrichCustomerTimelineDtosAsync(context, customerId, new List<CustomerTimelineEntryDto> { entryDto });
                 return new ApiResponse<CustomerTimelineEntryDto> { Success = true, Data = entryDto };
             }
             catch (Exception ex)
@@ -716,7 +716,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(_context, 0, customerCode);
+                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(context, 0, customerCode);
                 if (err != null)
                     return new ApiResponse<CustomerTimelineEntryDto> { Success = false, Message = err };
                 return await AddCustomerTimelineEntry(cid, dto);

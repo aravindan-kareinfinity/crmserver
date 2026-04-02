@@ -4,24 +4,24 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CRM.Server.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
+    [ApiController]
     public class ReferencesController : ControllerBase
     {
-        private readonly IReferenceService _referenceService;
-        private readonly IPincodeGeoService _pincodeGeoService;
+        IReferenceService referenceService;
+        IPincodeGeoService pincodeGeoService;
 
         public ReferencesController(IReferenceService referenceService, IPincodeGeoService pincodeGeoService)
         {
-            _referenceService = referenceService;
-            _pincodeGeoService = pincodeGeoService;
+            this.referenceService = referenceService;
+            this.pincodeGeoService = pincodeGeoService;
         }
 
         /// <summary>India Post pincode API → Country / State / City reference ids (creates reference rows when missing).</summary>
         [HttpGet("resolve-pincode/{pincode}")]
         public async Task<ActionResult<ApiResponse<PincodeResolveResponseDto>>> ResolvePincode(string pincode)
         {
-            var result = await _pincodeGeoService.ResolveAsync(pincode);
+            var result = await pincodeGeoService.ResolveAsync(pincode);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -30,7 +30,7 @@ namespace CRM.Server.Controllers
         [HttpGet]
         public async Task<ActionResult<ApiResponse<List<ReferenceResponseDto>>>> GetAll()
         {
-            var result = await _referenceService.GetAll();
+            var result = await referenceService.GetAll();
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }
@@ -38,7 +38,7 @@ namespace CRM.Server.Controllers
         [HttpGet("category/{category}")]
         public async Task<ActionResult<ApiResponse<List<ReferenceResponseDto>>>> GetReferencesByCategory(string category)
         {
-            var result = await _referenceService.GetReferencesByCategory(category);
+            var result = await referenceService.GetReferencesByCategory(category);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -47,7 +47,7 @@ namespace CRM.Server.Controllers
         [HttpGet("value/{value}")]
         public async Task<ActionResult<ApiResponse<ReferenceResponseDto>>> GetByValue(string value)
         {
-            var result = await _referenceService.GetByValue(value);
+            var result = await referenceService.GetByValue(value);
             if (!result.Success) return NotFound(result);
             return Ok(result);
         }
@@ -55,7 +55,7 @@ namespace CRM.Server.Controllers
         [HttpGet("{id:int}/label")]
         public async Task<ActionResult<ApiResponse<ReferenceLabelResponseDto>>> GetLabelById(int id)
         {
-            var result = await _referenceService.GetLabelById(id);
+            var result = await referenceService.GetLabelById(id);
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }
@@ -63,7 +63,7 @@ namespace CRM.Server.Controllers
         [HttpGet("label-by-value/{value}")]
         public async Task<ActionResult<ApiResponse<ReferenceLabelResponseDto>>> GetLabelByValue(string value)
         {
-            var result = await _referenceService.GetLabelByValue(value);
+            var result = await referenceService.GetLabelByValue(value);
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }
@@ -71,7 +71,7 @@ namespace CRM.Server.Controllers
         [HttpGet("{id:int}")]
         public async Task<ActionResult<ApiResponse<ReferenceResponseDto>>> GetReferenceById(int id)
         {
-            var result = await _referenceService.GetReferenceById(id);
+            var result = await referenceService.GetReferenceById(id);
             if (!result.Success)
                 return NotFound(result);
             return Ok(result);
@@ -80,7 +80,7 @@ namespace CRM.Server.Controllers
         [HttpPost]
         public async Task<ActionResult<ApiResponse<ReferenceResponseDto>>> CreateReference([FromBody] CreateReferenceDto dto)
         {
-            var result = await _referenceService.Create(dto);
+            var result = await referenceService.Create(dto);
             if (!result.Success)
                 return BadRequest(result);
             return CreatedAtAction(nameof(GetReferenceById), new { id = result.Data?.Id }, result);
@@ -89,7 +89,7 @@ namespace CRM.Server.Controllers
         [HttpPut("{id:int}")]
         public async Task<ActionResult<ApiResponse<ReferenceResponseDto>>> UpdateReference(int id, [FromBody] UpdateReferenceDto dto)
         {
-            var result = await _referenceService.Update(id, dto);
+            var result = await referenceService.Update(id, dto);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -98,7 +98,7 @@ namespace CRM.Server.Controllers
         [HttpDelete("{id:int}")]
         public async Task<ActionResult<ApiResponse<bool>>> DeleteReference(int id)
         {
-            var result = await _referenceService.Delete(id);
+            var result = await referenceService.Delete(id);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);

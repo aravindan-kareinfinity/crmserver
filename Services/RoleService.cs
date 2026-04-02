@@ -16,11 +16,11 @@ namespace CRM.Server.Services
 
     public class RoleService : IRoleService
     {
-        private readonly CrmDbContext _context;
+        CrmDbContext context;
 
         public RoleService(CrmDbContext context)
         {
-            _context = context;
+            this.context = context;
         }
 
         private static RoleResponseDto Map(Role r, int userCount) => new()
@@ -38,7 +38,7 @@ namespace CRM.Server.Services
 
         private async Task<Dictionary<string, int>> UserCountsByRoleNameAsync()
         {
-            return await _context.Users.AsNoTracking()
+            return await context.Users.AsNoTracking()
                 .GroupBy(u => u.Role)
                 .Select(g => new { Role = g.Key, Cnt = g.Count() })
                 .ToDictionaryAsync(x => x.Role, x => x.Cnt);
@@ -48,7 +48,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var roles = await _context.Roles.AsNoTracking().OrderBy(r => r.Name).ToListAsync();
+                var roles = await context.Roles.AsNoTracking().OrderBy(r => r.Name).ToListAsync();
                 var counts = await UserCountsByRoleNameAsync();
                 var data = roles.Select(r => Map(r, counts.TryGetValue(r.Name, out var c) ? c : 0)).ToList();
                 return new ApiResponse<List<RoleResponseDto>> { Success = true, Data = data };
@@ -63,7 +63,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var r = await _context.Roles.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+                var r = await context.Roles.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
                 if (r == null) return new ApiResponse<RoleResponseDto> { Success = false, Message = "Role not found" };
                 var counts = await UserCountsByRoleNameAsync();
                 var n = counts.TryGetValue(r.Name, out var c) ? c : 0;
@@ -95,8 +95,8 @@ namespace CRM.Server.Services
                     ModifiedAt = now,
                     ModifiedBy = AuditUserIds.System
                 };
-                _context.Roles.Add(r);
-                await _context.SaveChangesAsync();
+                context.Roles.Add(r);
+                await context.SaveChangesAsync();
                 return new ApiResponse<RoleResponseDto> { Success = true, Data = Map(r, 0) };
             }
             catch (DbUpdateException ex)
@@ -117,7 +117,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var r = await _context.Roles.FirstOrDefaultAsync(x => x.Id == id);
+                var r = await context.Roles.FirstOrDefaultAsync(x => x.Id == id);
                 if (r == null) return new ApiResponse<RoleResponseDto> { Success = false, Message = "Role not found" };
 
                 var newName = dto.Name.Trim();
@@ -127,12 +127,12 @@ namespace CRM.Server.Services
                 var oldName = r.Name;
                 if (!string.Equals(oldName, newName, StringComparison.Ordinal))
                 {
-                    var taken = await _context.Roles.AnyAsync(x => x.Name == newName && x.Id != id);
+                    var taken = await context.Roles.AnyAsync(x => x.Name == newName && x.Id != id);
                     if (taken)
                         return new ApiResponse<RoleResponseDto> { Success = false, Message = "A role with this name already exists" };
 
                     const string by = "System";
-                    await _context.Database.ExecuteSqlInterpolatedAsync(
+                    await context.Database.ExecuteSqlInterpolatedAsync(
                         $"UPDATE users SET role = {newName}, modified_at = {DateTime.UtcNow}, modified_by = {by} WHERE role = {oldName}");
                 }
 
@@ -141,7 +141,7 @@ namespace CRM.Server.Services
                 r.Permissions = dto.Permissions ?? new List<string>();
                 r.ModifiedAt = DateTime.UtcNow;
                 r.ModifiedBy = AuditUserIds.System;
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
 
                 var counts = await UserCountsByRoleNameAsync();
                 var n = counts.TryGetValue(r.Name, out var c) ? c : 0;
@@ -165,10 +165,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var r = await _context.Roles.FirstOrDefaultAsync(x => x.Id == id);
+                var r = await context.Roles.FirstOrDefaultAsync(x => x.Id == id);
                 if (r == null) return new ApiResponse<bool> { Success = false, Message = "Role not found" };
 
-                var assigned = await _context.Users.CountAsync(u => u.Role == r.Name);
+                var assigned = await context.Users.CountAsync(u => u.Role == r.Name);
                 if (assigned > 0)
                     return new ApiResponse<bool>
                     {
@@ -176,8 +176,8 @@ namespace CRM.Server.Services
                         Message = $"Cannot delete role assigned to {assigned} user(s). Reassign users first."
                     };
 
-                _context.Roles.Remove(r);
-                await _context.SaveChangesAsync();
+                context.Roles.Remove(r);
+                await context.SaveChangesAsync();
                 return new ApiResponse<bool> { Success = true, Data = true };
             }
             catch (DbUpdateException ex)

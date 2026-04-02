@@ -4,15 +4,15 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CRM.Server.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
+    [ApiController]
     public class ServicesController : ControllerBase
     {
-        private readonly IServiceService _serviceService;
+        IServiceService serviceService;
 
         public ServicesController(IServiceService serviceService)
         {
-            _serviceService = serviceService;
+            this.serviceService = serviceService;
         }
 
         [HttpGet]
@@ -20,7 +20,7 @@ namespace CRM.Server.Controllers
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10)
         {
-            var result = await _serviceService.GetAllServices(pageNumber, pageSize);
+            var result = await serviceService.GetAllServices(pageNumber, pageSize);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -29,7 +29,7 @@ namespace CRM.Server.Controllers
         [HttpGet("all")]
         public async Task<ActionResult<ApiResponse<List<ServiceResponseDto>>>> GetAllServicesList()
         {
-            var result = await _serviceService.GetAllServicesList();
+            var result = await serviceService.GetAllServicesList();
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -38,7 +38,7 @@ namespace CRM.Server.Controllers
         [HttpGet("implementation-assignments")]
         public async Task<ActionResult<ApiResponse<List<ImplementationAssignmentDto>>>> GetAllImplementationAssignments()
         {
-            var result = await _serviceService.GetAllImplementationAssignments();
+            var result = await serviceService.GetAllImplementationAssignments();
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -47,7 +47,7 @@ namespace CRM.Server.Controllers
         [HttpGet("{id:int}")]
         public async Task<ActionResult<ApiResponse<ServiceResponseDto>>> GetServiceById(int id)
         {
-            var result = await _serviceService.GetServiceById(id);
+            var result = await serviceService.GetServiceById(id);
             if (!result.Success)
                 return NotFound(result);
             return Ok(result);
@@ -56,7 +56,7 @@ namespace CRM.Server.Controllers
         [HttpGet("customer/{customerId:int}")]
         public async Task<ActionResult<ApiResponse<List<ServiceResponseDto>>>> GetServicesByCustomer(int customerId)
         {
-            var result = await _serviceService.GetServicesByCustomer(customerId);
+            var result = await serviceService.GetServicesByCustomer(customerId);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -65,7 +65,7 @@ namespace CRM.Server.Controllers
         [HttpGet("customer/by-code")]
         public async Task<ActionResult<ApiResponse<List<ServiceResponseDto>>>> GetServicesByCustomerCode([FromQuery] string customerCode)
         {
-            var result = await _serviceService.GetServicesByCustomerCode(customerCode);
+            var result = await serviceService.GetServicesByCustomerCode(customerCode);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -74,7 +74,7 @@ namespace CRM.Server.Controllers
         [HttpGet("{id:int}/implementation-timeline")]
         public async Task<ActionResult<ApiResponse<List<ImplementationTimelineEntryDto>>>> GetImplementationTimeline(int id)
         {
-            var result = await _serviceService.GetImplementationTimeline(id);
+            var result = await serviceService.GetImplementationTimeline(id);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -85,7 +85,7 @@ namespace CRM.Server.Controllers
             int id,
             [FromBody] AddImplementationTimelineEntryDto dto)
         {
-            var result = await _serviceService.AddImplementationTimelineEntry(id, dto);
+            var result = await serviceService.AddImplementationTimelineEntry(id, dto);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -96,7 +96,7 @@ namespace CRM.Server.Controllers
             int id,
             [FromBody] UpsertImplementationAssignmentDto dto)
         {
-            var result = await _serviceService.UpsertImplementationAssignment(id, dto);
+            var result = await serviceService.UpsertImplementationAssignment(id, dto);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -105,7 +105,7 @@ namespace CRM.Server.Controllers
         [HttpPost]
         public async Task<ActionResult<ApiResponse<ServiceResponseDto>>> CreateService(CreateServiceDto dto)
         {
-            var result = await _serviceService.CreateService(dto);
+            var result = await serviceService.CreateService(dto);
             if (!result.Success)
                 return BadRequest(result);
             return CreatedAtAction(nameof(GetServiceById), new { id = result.Data?.Id }, result);
@@ -114,7 +114,7 @@ namespace CRM.Server.Controllers
         [HttpPut("{id:int}")]
         public async Task<ActionResult<ApiResponse<ServiceResponseDto>>> UpdateService(int id, UpdateServiceDto dto)
         {
-            var result = await _serviceService.UpdateService(id, dto);
+            var result = await serviceService.UpdateService(id, dto);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -123,7 +123,7 @@ namespace CRM.Server.Controllers
         [HttpPut("{id:int}/go-live")]
         public async Task<ActionResult<ApiResponse<ServiceResponseDto>>> GoLive(int id, [FromBody] GoLiveServiceDto dto)
         {
-            var result = await _serviceService.GoLive(id, dto);
+            var result = await serviceService.GoLive(id, dto);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -132,7 +132,7 @@ namespace CRM.Server.Controllers
         [HttpDelete("{id:int}")]
         public async Task<ActionResult<ApiResponse<bool>>> DeleteService(int id)
         {
-            var result = await _serviceService.DeleteService(id);
+            var result = await serviceService.DeleteService(id);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);

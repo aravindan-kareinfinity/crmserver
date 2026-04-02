@@ -4,21 +4,21 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CRM.Server.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
+    [ApiController]
     public class SchedulerEventsController : ControllerBase
     {
-        private readonly ISchedulerService _schedulerService;
+        ISchedulerService schedulerService;
 
         public SchedulerEventsController(ISchedulerService schedulerService)
         {
-            _schedulerService = schedulerService;
+            this.schedulerService = schedulerService;
         }
 
         [HttpGet]
         public async Task<ActionResult<ApiResponse<List<SchedulerEventResponseDto>>>> GetAll()
         {
-            var result = await _schedulerService.GetAll();
+            var result = await schedulerService.GetAll();
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -27,7 +27,7 @@ namespace CRM.Server.Controllers
         [HttpGet("{id:int}")]
         public async Task<ActionResult<ApiResponse<SchedulerEventResponseDto>>> GetById(int id)
         {
-            var result = await _schedulerService.GetById(id);
+            var result = await schedulerService.GetById(id);
             if (!result.Success)
                 return NotFound(result);
             return Ok(result);
@@ -36,7 +36,7 @@ namespace CRM.Server.Controllers
         [HttpPost]
         public async Task<ActionResult<ApiResponse<SchedulerEventResponseDto>>> Create([FromBody] CreateSchedulerEventDto dto)
         {
-            var result = await _schedulerService.Create(dto);
+            var result = await schedulerService.Create(dto);
             if (!result.Success)
                 return BadRequest(result);
             return CreatedAtAction(nameof(GetById), new { id = result.Data?.Id }, result);
@@ -45,7 +45,7 @@ namespace CRM.Server.Controllers
         [HttpPut("{id:int}")]
         public async Task<ActionResult<ApiResponse<SchedulerEventResponseDto>>> Update(int id, [FromBody] UpdateSchedulerEventDto dto)
         {
-            var result = await _schedulerService.Update(id, dto);
+            var result = await schedulerService.Update(id, dto);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);
@@ -54,7 +54,7 @@ namespace CRM.Server.Controllers
         [HttpDelete("{id:int}")]
         public async Task<ActionResult<ApiResponse<bool>>> Delete(int id)
         {
-            var result = await _schedulerService.Delete(id);
+            var result = await schedulerService.Delete(id);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);

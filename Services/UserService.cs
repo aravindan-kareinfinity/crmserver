@@ -21,11 +21,11 @@ namespace CRM.Server.Services
 
     public class UserService : IUserService
     {
-        private readonly CrmDbContext _context;
+        CrmDbContext context;
 
         public UserService(CrmDbContext context)
         {
-            _context = context;
+            this.context = context;
         }
 
         private static UserResponseDto Map(User u, List<string> permissions) => new()
@@ -47,7 +47,7 @@ namespace CRM.Server.Services
 
         private async Task<Dictionary<string, List<string>>> LoadRolePermissionsMapAsync()
         {
-            var roles = await _context.Roles.AsNoTracking().ToListAsync();
+            var roles = await context.Roles.AsNoTracking().ToListAsync();
             var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var r in roles)
             {
@@ -108,7 +108,7 @@ namespace CRM.Server.Services
                     return new ApiResponse<LoginResponseDto> { Success = false, Message = "Email and password are required" };
 
                 var emailNorm = email.ToLowerInvariant();
-                var user = await _context.Users
+                var user = await context.Users
                     .FirstOrDefaultAsync(u => u.Email.ToLower() == emailNorm);
 
                 if (user == null)
@@ -122,7 +122,7 @@ namespace CRM.Server.Services
 
                 user.LastLogin = DateTime.UtcNow;
                 user.ModifiedAt = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
 
                 var permMap = await LoadRolePermissionsMapAsync();
                 var permissions = PermissionsForRole(user, permMap);
@@ -149,7 +149,7 @@ namespace CRM.Server.Services
             try
             {
                 var permMap = await LoadRolePermissionsMapAsync();
-                var list = await _context.Users.OrderByDescending(u => u.CreatedAt).ToListAsync();
+                var list = await context.Users.OrderByDescending(u => u.CreatedAt).ToListAsync();
                 return new ApiResponse<List<UserResponseDto>>
                 {
                     Success = true,
@@ -166,7 +166,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var u = await _context.Users.FindAsync(id);
+                var u = await context.Users.FindAsync(id);
                 if (u == null) return new ApiResponse<UserResponseDto> { Success = false, Message = "User not found" };
                 var permMap = await LoadRolePermissionsMapAsync();
                 return new ApiResponse<UserResponseDto> { Success = true, Data = Map(u, PermissionsForRole(u, permMap)) };
@@ -181,7 +181,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var u = await _context.Users.FirstOrDefaultAsync(x => x.Email == email);
+                var u = await context.Users.FirstOrDefaultAsync(x => x.Email == email);
                 if (u == null) return new ApiResponse<UserResponseDto> { Success = false, Message = "User not found" };
                 var permMap = await LoadRolePermissionsMapAsync();
                 return new ApiResponse<UserResponseDto> { Success = true, Data = Map(u, PermissionsForRole(u, permMap)) };
@@ -198,7 +198,7 @@ namespace CRM.Server.Services
             {
                 var active = string.Equals(status, "active", StringComparison.OrdinalIgnoreCase);
                 var permMap = await LoadRolePermissionsMapAsync();
-                var list = await _context.Users.Where(u => u.IsActive == active).OrderByDescending(u => u.CreatedAt).ToListAsync();
+                var list = await context.Users.Where(u => u.IsActive == active).OrderByDescending(u => u.CreatedAt).ToListAsync();
                 return new ApiResponse<List<UserResponseDto>>
                 {
                     Success = true,
@@ -229,9 +229,9 @@ namespace CRM.Server.Services
                     };
 
                 var emailNorm = email.ToLowerInvariant();
-                if (await _context.Users.AnyAsync(u => u.UserLoginId.ToLower() == loginId.ToLowerInvariant()))
+                if (await context.Users.AnyAsync(u => u.UserLoginId.ToLower() == loginId.ToLowerInvariant()))
                     return new ApiResponse<UserResponseDto> { Success = false, Message = "Login ID is already in use" };
-                if (await _context.Users.AnyAsync(u => u.Email.ToLower() == emailNorm))
+                if (await context.Users.AnyAsync(u => u.Email.ToLower() == emailNorm))
                     return new ApiResponse<UserResponseDto> { Success = false, Message = "Email is already in use" };
 
                 var now = DateTime.UtcNow;
@@ -250,8 +250,8 @@ namespace CRM.Server.Services
                     ModifiedAt = now,
                     ModifiedBy = AuditUserIds.System
                 };
-                _context.Users.Add(u);
-                await _context.SaveChangesAsync();
+                context.Users.Add(u);
+                await context.SaveChangesAsync();
                 var permMap = await LoadRolePermissionsMapAsync();
                 return new ApiResponse<UserResponseDto> { Success = true, Data = Map(u, PermissionsForRole(u, permMap)) };
             }
@@ -274,7 +274,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var u = await _context.Users.FindAsync(id);
+                var u = await context.Users.FindAsync(id);
                 if (u == null) return new ApiResponse<UserResponseDto> { Success = false, Message = "User not found" };
                 if (!string.IsNullOrWhiteSpace(dto.FirstName)) u.FirstName = dto.FirstName;
                 if (!string.IsNullOrWhiteSpace(dto.LastName)) u.LastName = dto.LastName;
@@ -294,7 +294,7 @@ namespace CRM.Server.Services
 
                 u.ModifiedAt = DateTime.UtcNow;
                 u.ModifiedBy = AuditUserIds.System;
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
                 var permMap = await LoadRolePermissionsMapAsync();
                 return new ApiResponse<UserResponseDto> { Success = true, Data = Map(u, PermissionsForRole(u, permMap)) };
             }
@@ -317,10 +317,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var u = await _context.Users.FindAsync(id);
+                var u = await context.Users.FindAsync(id);
                 if (u == null) return new ApiResponse<bool> { Success = false, Message = "User not found" };
-                _context.Users.Remove(u);
-                await _context.SaveChangesAsync();
+                context.Users.Remove(u);
+                await context.SaveChangesAsync();
                 return new ApiResponse<bool> { Success = true, Data = true };
             }
             catch (Exception ex)

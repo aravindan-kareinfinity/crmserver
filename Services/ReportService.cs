@@ -20,13 +20,13 @@ namespace CRM.Server.Services
 
     public class ReportService : IReportService
     {
-        private readonly CrmDbContext _context;
-        private readonly NpgsqlDataSource _dataSource;
+        CrmDbContext context;
+        NpgsqlDataSource dataSource;
 
         public ReportService(CrmDbContext context, NpgsqlDataSource dataSource)
         {
-            _context = context;
-            _dataSource = dataSource;
+            this.context = context;
+            this.dataSource = dataSource;
         }
 
         private static ReportResponseDto MapReport(Report r) => new()
@@ -49,7 +49,7 @@ namespace CRM.Server.Services
 
         public async Task<ApiResponse<List<ReportResponseDto>>> GetAll()
         {
-            var rows = await _context.Reports.AsNoTracking()
+            var rows = await context.Reports.AsNoTracking()
                 .OrderByDescending(r => r.ModifiedAt)
                 .ToListAsync();
             return new ApiResponse<List<ReportResponseDto>>
@@ -61,7 +61,7 @@ namespace CRM.Server.Services
 
         public async Task<ApiResponse<ReportResponseDto>> GetById(int id)
         {
-            var r = await _context.Reports.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+            var r = await context.Reports.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
             if (r == null)
                 return new ApiResponse<ReportResponseDto> { Success = false, Message = "Report not found" };
             return new ApiResponse<ReportResponseDto> { Success = true, Data = MapReport(r) };
@@ -85,14 +85,14 @@ namespace CRM.Server.Services
                 ModifiedAt = now,
                 LastRun = now,
             };
-            _context.Reports.Add(entity);
-            await _context.SaveChangesAsync();
+            context.Reports.Add(entity);
+            await context.SaveChangesAsync();
             return new ApiResponse<ReportResponseDto> { Success = true, Data = MapReport(entity) };
         }
 
         public async Task<ApiResponse<ReportResponseDto>> Update(int id, UpdateReportDto dto)
         {
-            var entity = await _context.Reports.FindAsync(id);
+            var entity = await context.Reports.FindAsync(id);
             if (entity == null)
                 return new ApiResponse<ReportResponseDto> { Success = false, Message = "Report not found" };
 
@@ -107,23 +107,23 @@ namespace CRM.Server.Services
                 entity.IsActive = dto.IsActive.Value;
             entity.ModifiedAt = DateTime.UtcNow;
             entity.ModifiedBy = dto.ModifiedBy;
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
             return new ApiResponse<ReportResponseDto> { Success = true, Data = MapReport(entity) };
         }
 
         public async Task<ApiResponse<bool>> Delete(int id)
         {
-            var entity = await _context.Reports.FindAsync(id);
+            var entity = await context.Reports.FindAsync(id);
             if (entity == null)
                 return new ApiResponse<bool> { Success = false, Message = "Report not found" };
-            _context.Reports.Remove(entity);
-            await _context.SaveChangesAsync();
+            context.Reports.Remove(entity);
+            await context.SaveChangesAsync();
             return new ApiResponse<bool> { Success = true, Data = true };
         }
 
         public async Task<ApiResponse<ReportRunResultDto>> Run(int id, RunReportRequestDto dto)
         {
-            var report = await _context.Reports.FindAsync(id);
+            var report = await context.Reports.FindAsync(id);
             if (report == null)
                 return new ApiResponse<ReportRunResultDto> { Success = false, Message = "Report not found" };
             if (string.IsNullOrWhiteSpace(report.Query))
@@ -151,7 +151,7 @@ namespace CRM.Server.Services
             List<Dictionary<string, object?>> rows;
             try
             {
-                await using var conn = await _dataSource.OpenConnectionAsync();
+                await using var conn = await dataSource.OpenConnectionAsync();
                 await using var cmd = new NpgsqlCommand(sql, conn);
                 cmd.Parameters.AddWithValue("start_date", NpgsqlTypes.NpgsqlDbType.TimestampTz, startUtc);
                 cmd.Parameters.AddWithValue("end_date", NpgsqlTypes.NpgsqlDbType.TimestampTz, endUtc);
@@ -179,7 +179,7 @@ namespace CRM.Server.Services
             }
 
             report.LastRun = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
 
             return new ApiResponse<ReportRunResultDto>
             {

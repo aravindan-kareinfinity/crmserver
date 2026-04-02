@@ -23,11 +23,11 @@ namespace CRM.Server.Services
 
     public class InvoiceService : IInvoiceService
     {
-        private readonly CrmDbContext _context;
+        CrmDbContext context;
 
         public InvoiceService(CrmDbContext context)
         {
-            _context = context;
+            this.context = context;
         }
 
         /// <summary>Uses <see cref="Service.CreatedBy"/> as <see cref="Invoice.StaffId"/> when that row exists in <c>users</c>.</summary>
@@ -36,7 +36,7 @@ namespace CRM.Server.Services
             if (serviceCreatedBy is null || serviceCreatedBy <= 0 || serviceCreatedBy > int.MaxValue)
                 return null;
             var uid = (int)serviceCreatedBy;
-            return await _context.Users.AsNoTracking().AnyAsync(u => u.Id == uid) ? uid : null;
+            return await context.Users.AsNoTracking().AnyAsync(u => u.Id == uid) ? uid : null;
         }
 
         private static string? FormatUserDisplayName(User u)
@@ -56,7 +56,7 @@ namespace CRM.Server.Services
             if (intIds.Count == 0)
                 return new Dictionary<long, string>();
 
-            var users = await _context.Users.AsNoTracking()
+            var users = await context.Users.AsNoTracking()
                 .Where(u => intIds.Contains(u.Id))
                 .ToListAsync();
 
@@ -72,7 +72,7 @@ namespace CRM.Server.Services
 
         private async Task EnrichInvoicesAsync(List<InvoiceResponseDto> rows)
         {
-            await EntityCodeResolution.EnrichInvoiceDtosAsync(_context, rows);
+            await EntityCodeResolution.EnrichInvoiceDtosAsync(context, rows);
         }
 
         /// <summary>
@@ -83,7 +83,7 @@ namespace CRM.Server.Services
         private async Task SyncCustomerSalesFlagsFromInvoiceAsync(string customerCode, string invoiceNumber, decimal received)
         {
             if (string.IsNullOrWhiteSpace(customerCode)) return;
-            var cust = await _context.Customers.FirstOrDefaultAsync(c => c.Code == customerCode);
+            var cust = await context.Customers.FirstOrDefaultAsync(c => c.Code == customerCode);
             if (cust == null) return;
 
             var changed = false;
@@ -107,7 +107,7 @@ namespace CRM.Server.Services
             {
                 cust.ModifiedAt = DateTime.UtcNow;
                 cust.ModifiedBy = AuditUserIds.System;
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
             }
         }
 
@@ -163,8 +163,8 @@ namespace CRM.Server.Services
         {
             try
             {
-                var total = await _context.Invoices.CountAsync();
-                var items = await _context.Invoices.Include(i => i.Customer).OrderByDescending(i => i.CreatedAt)
+                var total = await context.Invoices.CountAsync();
+                var items = await context.Invoices.Include(i => i.Customer).OrderByDescending(i => i.CreatedAt)
                     .Skip((pageNumber - 1) * pageSize).Take(pageSize).ToListAsync();
                 var createdByLookup = await ResolveUserDisplayNamesByIdAsync(items.Select(i => i.CreatedBy));
                 var invDtos = items.Select(i => MapInvoice(i, createdByLookup)).ToList();
@@ -191,7 +191,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Invoices.Include(i => i.Customer).OrderByDescending(i => i.CreatedAt).ToListAsync();
+                var list = await context.Invoices.Include(i => i.Customer).OrderByDescending(i => i.CreatedAt).ToListAsync();
                 var createdByLookup = await ResolveUserDisplayNamesByIdAsync(list.Select(i => i.CreatedBy));
                 var invDtos = list.Select(i => MapInvoice(i, createdByLookup)).ToList();
                 await EnrichInvoicesAsync(invDtos);
@@ -207,7 +207,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var i = await _context.Invoices.Include(x => x.Customer).FirstOrDefaultAsync(x => x.Id == id);
+                var i = await context.Invoices.Include(x => x.Customer).FirstOrDefaultAsync(x => x.Id == id);
                 if (i == null) return new ApiResponse<InvoiceResponseDto> { Success = false, Message = "Invoice not found" };
                 var createdByLookup = await ResolveUserDisplayNamesByIdAsync(new[] { i.CreatedBy });
                 var one = MapInvoice(i, createdByLookup);
@@ -224,10 +224,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(_context, customerId);
+                var cc = await EntityCodeResolution.GetCustomerCodeByIdAsync(context, customerId);
                 if (string.IsNullOrEmpty(cc))
                     return new ApiResponse<List<InvoiceResponseDto>> { Success = true, Data = new List<InvoiceResponseDto>() };
-                var list = await _context.Invoices.Include(i => i.Customer).Where(i => i.CustomerCode == cc).OrderByDescending(i => i.CreatedAt).ToListAsync();
+                var list = await context.Invoices.Include(i => i.Customer).Where(i => i.CustomerCode == cc).OrderByDescending(i => i.CreatedAt).ToListAsync();
                 var createdByLookup = await ResolveUserDisplayNamesByIdAsync(list.Select(i => i.CreatedBy));
                 var invDtos = list.Select(i => MapInvoice(i, createdByLookup)).ToList();
                 await EnrichInvoicesAsync(invDtos);
@@ -243,7 +243,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(_context, 0, customerCode);
+                var (cid, err) = await EntityCodeResolution.ResolveCustomerIdAsync(context, 0, customerCode);
                 if (err != null)
                     return new ApiResponse<List<InvoiceResponseDto>> { Success = false, Message = err };
                 return await GetInvoicesByCustomer(cid);
@@ -258,7 +258,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.Invoices.Include(i => i.Customer).Where(i => i.StaffId == staffId).OrderByDescending(i => i.CreatedAt).ToListAsync();
+                var list = await context.Invoices.Include(i => i.Customer).Where(i => i.StaffId == staffId).OrderByDescending(i => i.CreatedAt).ToListAsync();
                 var createdByLookup = await ResolveUserDisplayNamesByIdAsync(list.Select(i => i.CreatedBy));
                 var invDtos = list.Select(i => MapInvoice(i, createdByLookup)).ToList();
                 await EnrichInvoicesAsync(invDtos);
@@ -274,7 +274,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var (custCode, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(_context, dto.CustomerId, dto.CustomerCode);
+                var (custCode, _, cErr) = await EntityCodeResolution.ResolveCustomerLinkAsync(context, dto.CustomerId, dto.CustomerCode);
                 if (cErr != null)
                     return new ApiResponse<InvoiceResponseDto> { Success = false, Message = cErr };
 
@@ -282,7 +282,7 @@ namespace CRM.Server.Services
                 var staffId = dto.StaffId;
                 if (!staffId.HasValue && dto.ServiceId > 0)
                 {
-                    var svc = await _context.Services.AsNoTracking()
+                    var svc = await context.Services.AsNoTracking()
                         .FirstOrDefaultAsync(s => s.Id == dto.ServiceId);
                     if (svc != null)
                         staffId = await ResolveStaffIdFromServiceCreatedByAsync(svc.CreatedBy);
@@ -306,13 +306,13 @@ namespace CRM.Server.Services
                     ModifiedAt = now,
                     ModifiedBy = AuditUserIds.System
                 };
-                _context.Invoices.Add(invoice);
-                await _context.SaveChangesAsync();
+                context.Invoices.Add(invoice);
+                await context.SaveChangesAsync();
 
                 // Customer milestone flags (invoice/payment)
                 await SyncCustomerSalesFlagsFromInvoiceAsync(custCode, invoice.InvoiceNumber, invoice.Received);
 
-                await _context.Entry(invoice).Reference(x => x.Customer).LoadAsync();
+                await context.Entry(invoice).Reference(x => x.Customer).LoadAsync();
                 var createLookup = await ResolveUserDisplayNamesByIdAsync(new[] { invoice.CreatedBy });
                 var created = MapInvoice(invoice, createLookup);
                 await EnrichInvoicesAsync(new List<InvoiceResponseDto> { created });
@@ -328,7 +328,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var i = await _context.Invoices.FindAsync(id);
+                var i = await context.Invoices.FindAsync(id);
                 if (i == null) return new ApiResponse<InvoiceResponseDto> { Success = false, Message = "Invoice not found" };
                 if (dto.PaymentStatusId.HasValue) i.PaymentStatusId = dto.PaymentStatusId.Value;
                 if (dto.Receivable.HasValue) i.Receivable = dto.Receivable.Value;
@@ -340,12 +340,12 @@ namespace CRM.Server.Services
                 if (dto.PaidBy != null) i.PaidBy = dto.PaidBy;
                 i.ModifiedAt = DateTime.UtcNow;
                 i.ModifiedBy = AuditUserIds.System;
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
 
                 // Customer milestone flags (payment)
                 await SyncCustomerSalesFlagsFromInvoiceAsync(i.CustomerCode, i.InvoiceNumber, i.Received);
 
-                await _context.Entry(i).Reference(x => x.Customer).LoadAsync();
+                await context.Entry(i).Reference(x => x.Customer).LoadAsync();
                 var updateLookup = await ResolveUserDisplayNamesByIdAsync(new[] { i.CreatedBy });
                 var updated = MapInvoice(i, updateLookup);
                 await EnrichInvoicesAsync(new List<InvoiceResponseDto> { updated });
@@ -361,10 +361,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var i = await _context.Invoices.FindAsync(id);
+                var i = await context.Invoices.FindAsync(id);
                 if (i == null) return new ApiResponse<bool> { Success = false, Message = "Invoice not found" };
-                _context.Invoices.Remove(i);
-                await _context.SaveChangesAsync();
+                context.Invoices.Remove(i);
+                await context.SaveChangesAsync();
                 return new ApiResponse<bool> { Success = true, Data = true };
             }
             catch (Exception ex)
@@ -377,7 +377,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var rows = await _context.InvoiceTimelines.Where(t => t.InvoiceId == invoiceId)
+                var rows = await context.InvoiceTimelines.Where(t => t.InvoiceId == invoiceId)
                     .OrderByDescending(t => t.CreatedAt)
                     .Select(t => new InvoiceTimelineEntryDto
                     {
@@ -406,7 +406,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var inv = await _context.Invoices.FindAsync(invoiceId);
+                var inv = await context.Invoices.FindAsync(invoiceId);
                 if (inv == null) return new ApiResponse<InvoiceTimelineEntryDto> { Success = false, Message = "Invoice not found" };
                 var now = DateTime.UtcNow;
                 var e = new InvoiceTimeline
@@ -422,8 +422,8 @@ namespace CRM.Server.Services
                     ModifiedAt = now,
                     ModifiedBy = AuditUserIds.System
                 };
-                _context.InvoiceTimelines.Add(e);
-                await _context.SaveChangesAsync();
+                context.InvoiceTimelines.Add(e);
+                await context.SaveChangesAsync();
                 return new ApiResponse<InvoiceTimelineEntryDto>
                 {
                     Success = true,

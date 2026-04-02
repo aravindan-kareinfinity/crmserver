@@ -16,11 +16,11 @@ namespace CRM.Server.Services
 
     public class SchedulerService : ISchedulerService
     {
-        private readonly CrmDbContext _context;
+        CrmDbContext context;
 
         public SchedulerService(CrmDbContext context)
         {
-            _context = context;
+            this.context = context;
         }
 
         private static bool IsActiveForStatus(string status) =>
@@ -51,7 +51,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await _context.SchedulerEvents.AsNoTracking().OrderByDescending(e => e.StartTime).ToListAsync();
+                var list = await context.SchedulerEvents.AsNoTracking().OrderByDescending(e => e.StartTime).ToListAsync();
                 return new ApiResponse<List<SchedulerEventResponseDto>> { Success = true, Data = list.Select(Map).ToList() };
             }
             catch (Exception ex)
@@ -64,7 +64,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var e = await _context.SchedulerEvents.FindAsync(id);
+                var e = await context.SchedulerEvents.FindAsync(id);
                 if (e == null) return new ApiResponse<SchedulerEventResponseDto> { Success = false, Message = "Event not found" };
                 return new ApiResponse<SchedulerEventResponseDto> { Success = true, Data = Map(e) };
             }
@@ -99,8 +99,8 @@ namespace CRM.Server.Services
                     ModifiedAt = now,
                     ModifiedBy = AuditUserIds.System
                 };
-                _context.SchedulerEvents.Add(e);
-                await _context.SaveChangesAsync();
+                context.SchedulerEvents.Add(e);
+                await context.SaveChangesAsync();
                 return new ApiResponse<SchedulerEventResponseDto> { Success = true, Data = Map(e) };
             }
             catch (Exception ex)
@@ -113,7 +113,7 @@ namespace CRM.Server.Services
         {
             try
             {
-                var e = await _context.SchedulerEvents.FindAsync(id);
+                var e = await context.SchedulerEvents.FindAsync(id);
                 if (e == null) return new ApiResponse<SchedulerEventResponseDto> { Success = false, Message = "Event not found" };
                 var status = string.IsNullOrWhiteSpace(dto.Status) ? "scheduled" : dto.Status.Trim();
                 e.Title = dto.Title.Trim();
@@ -130,7 +130,7 @@ namespace CRM.Server.Services
                 e.RelatedToId = dto.RelatedToId;
                 e.ModifiedAt = DateTime.UtcNow;
                 e.ModifiedBy = AuditUserIds.System;
-                await _context.SaveChangesAsync();
+                await context.SaveChangesAsync();
                 return new ApiResponse<SchedulerEventResponseDto> { Success = true, Data = Map(e) };
             }
             catch (Exception ex)
@@ -143,10 +143,10 @@ namespace CRM.Server.Services
         {
             try
             {
-                var e = await _context.SchedulerEvents.FindAsync(id);
+                var e = await context.SchedulerEvents.FindAsync(id);
                 if (e == null) return new ApiResponse<bool> { Success = false, Message = "Event not found" };
-                _context.SchedulerEvents.Remove(e);
-                await _context.SaveChangesAsync();
+                context.SchedulerEvents.Remove(e);
+                await context.SaveChangesAsync();
                 return new ApiResponse<bool> { Success = true, Data = true };
             }
             catch (Exception ex)
