@@ -16,15 +16,6 @@ namespace CRM.Server.Models
         COMPLETED
     }
 
-    public enum TicketStatus
-    {
-        open,
-        in_progress,
-        waiting,
-        resolved,
-        closed
-    }
-
     public enum TicketPriority
     {
         critical,
@@ -98,7 +89,7 @@ namespace CRM.Server.Models
     public class Customer
     {
         public int Id { get; set; }
-        /// <summary>Stable business key; child tables FK to this (not <see cref="Id"/>).</summary>
+        /// <summary>Stable business key; child tables keep both <see cref="Id"/> and code.</summary>
         public string Code { get; set; } = string.Empty;
         public string RegName { get; set; } = string.Empty;
         public string Mobile { get; set; } = string.Empty;
@@ -152,10 +143,12 @@ namespace CRM.Server.Models
         public virtual ICollection<Invoice> Invoices { get; set; } = new List<Invoice>();
         public virtual ICollection<Ticket> Tickets { get; set; } = new List<Ticket>();
         public virtual ICollection<Investment> Investments { get; set; } = new List<Investment>();
+        public virtual ICollection<Payment> Payments { get; set; } = new List<Payment>();
     }
 
     public class CustomerTimeline : BaseTimeline
     {
+        public int CustomerId { get; set; }
         public string CustomerCode { get; set; } = string.Empty;
         public virtual Customer? Customer { get; set; }
     }
@@ -164,6 +157,7 @@ namespace CRM.Server.Models
     public class Service
     {
         public int Id { get; set; }
+        public int CustomerId { get; set; }
         public string CustomerCode { get; set; } = string.Empty;
         public int? LocationId { get; set; }
         public int? TradeNameId { get; set; }
@@ -205,6 +199,7 @@ namespace CRM.Server.Models
     {
         public int Id { get; set; }
         public string InvoiceNumber { get; set; } = string.Empty;
+        public int CustomerId { get; set; }
         public string CustomerCode { get; set; } = string.Empty;
         public int ServiceId { get; set; }
         public int? StaffId { get; set; }
@@ -239,6 +234,7 @@ namespace CRM.Server.Models
     {
         public int Id { get; set; }
         public int InvoiceId { get; set; }
+        public int CustomerId { get; set; }
         public string CustomerCode { get; set; } = string.Empty;
         public decimal Amount { get; set; }
         public decimal Remaining { get; set; }
@@ -252,12 +248,14 @@ namespace CRM.Server.Models
         public long? ModifiedBy { get; set; }
 
         public virtual Invoice? Invoice { get; set; }
+        public virtual Customer? Customer { get; set; }
     }
 
     // ========== Investment ==========
     public class Investment
     {
         public int Id { get; set; }
+        public int CustomerId { get; set; }
         public string CustomerCode { get; set; } = string.Empty;
         public int LocationId { get; set; }
         public decimal Amount { get; set; }
@@ -311,13 +309,15 @@ namespace CRM.Server.Models
     public class Ticket
     {
         public int Id { get; set; }
+        public int CustomerId { get; set; }
         public string CustomerCode { get; set; } = string.Empty;
         public int LocationId { get; set; }
         public string Subject { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string? ContactPerson { get; set; }
         public string? ContactMobile { get; set; }
-        public TicketStatus Status { get; set; }
+        /// <summary>Ticket status reference id (<c>reference_entries</c>, category: "Ticket Status").</summary>
+        public int StatusId { get; set; }
         public TicketPriority Priority { get; set; }
         public int AssignedTo { get; set; }
         public DateTime SlaDeadline { get; set; }
@@ -328,8 +328,10 @@ namespace CRM.Server.Models
         public long? ClosedBy { get; set; }
         public DateTime ModifiedAt { get; set; }
         public long? ModifiedBy { get; set; }
-        public string Category { get; set; } = string.Empty;
-        public string? Module { get; set; }
+        /// <summary>Ticket category reference id (<c>reference_entries</c>, category: "Ticket Category").</summary>
+        public int CategoryId { get; set; }
+        /// <summary>Ticket module reference id (<c>reference_entries</c>, category: "Ticket Module").</summary>
+        public int? ModuleId { get; set; }
 
         public virtual Customer? Customer { get; set; }
         public virtual ICollection<TicketTimeline> Timelines { get; set; } = new List<TicketTimeline>();
@@ -410,6 +412,7 @@ namespace CRM.Server.Models
     public class Trademark
     {
         public int Id { get; set; }
+        public int CustomerId { get; set; }
         public string CustomerCode { get; set; } = string.Empty;
         public int LocationId { get; set; }
         public string RegName { get; set; } = string.Empty;
@@ -430,6 +433,7 @@ namespace CRM.Server.Models
         public string? Description { get; set; }
         public DateTime? RegistrationDate { get; set; }
         public DateTime? ExpiryDate { get; set; }
+        public bool IsEnabled { get; set; } = true;
         public bool IsActive { get; set; } = true;
         public string? Remarks { get; set; }
         public DateTime CreatedAt { get; set; }
@@ -445,6 +449,7 @@ namespace CRM.Server.Models
     public class Location
     {
         public int Id { get; set; }
+        public int CustomerId { get; set; }
         public string CustomerCode { get; set; } = string.Empty;
         public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
@@ -462,6 +467,7 @@ namespace CRM.Server.Models
         public int TierId { get; set; }
         public bool IsPrimary { get; set; }
         public string GstNumber { get; set; } = string.Empty;
+        public bool IsEnabled { get; set; } = true;
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; }
         public long? CreatedBy { get; set; }

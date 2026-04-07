@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace CRM.Server.Services
 {
     /// <summary>
-    /// Resolves stable business <c>code</c> values; child tables FK <c>customer_code</c> → <c>customers.code</c>.
+    /// Resolves stable business <c>code</c> values; child tables store <c>customer_id</c> → <c>customers.id</c> and <c>customer_code</c> → <c>customers.code</c>.
     /// API DTOs still expose numeric <c>customerId</c> for clients; enrich or Include <see cref="Models.Customer"/> to populate.
     /// </summary>
     public static class EntityCodeResolution

@@ -3,7 +3,8 @@ using System.Text.RegularExpressions;
 using ClosedXML.Excel;
 using CRM.Server.DTOs;
 using CRM.Server.Models;
-using Microsoft.EntityFrameworkCore;
+using CRM.Server.Utils;
+using System.Data.Common;
 
 namespace CRM.Server.Services
 {
@@ -69,10 +70,52 @@ namespace CRM.Server.Services
                     return fail($"Missing required column: {h}");
             }
 
-            var entries = await context.ReferenceEntries.Where(e => e.IsActive).ToListAsync();
-            var existingRows = await context.Customers.AsNoTracking()
-                .Select(c => new ExistingCustomerSnapshot(c.Id, c.RegName, c.Email, c.Mobile))
-                .ToListAsync();
+            List<ReferenceEntry> entries = new();
+            List<ExistingCustomerSnapshot> existingRows = new();
+            using (IDb db = await dbprovider.GetDb())
+            {
+                await db.Connect();
+                var refsCmd = db.GetCommand(@"
+SELECT id, category, label, value, is_active, sort_order, requires_implementation, is_implementation
+FROM reference_entries
+WHERE is_active = true;");
+                using (DbDataReader reader = await db.Execute(refsCmd))
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        entries.Add(new ReferenceEntry
+                        {
+                            Id = reader.GetInt32(reader.GetOrdinal("id")),
+                            Category = reader.GetString(reader.GetOrdinal("category")),
+                            Label = reader.GetString(reader.GetOrdinal("label")),
+                            Value = reader.GetString(reader.GetOrdinal("value")),
+                            IsActive = reader.GetBoolean(reader.GetOrdinal("is_active")),
+                            SortOrder = reader.GetInt32(reader.GetOrdinal("sort_order")),
+                            RequiresImplementation = reader.IsDBNull(reader.GetOrdinal("requires_implementation"))
+                                ? null
+                                : reader.GetBoolean(reader.GetOrdinal("requires_implementation")),
+                            IsImplementation = reader.IsDBNull(reader.GetOrdinal("is_implementation"))
+                                ? null
+                                : reader.GetBoolean(reader.GetOrdinal("is_implementation")),
+                        });
+                    }
+                }
+
+                var existingCmd = db.GetCommand(@"
+SELECT id, reg_name, email, mobile
+FROM customers;");
+                using (DbDataReader reader2 = await db.Execute(existingCmd))
+                {
+                    while (await reader2.ReadAsync())
+                    {
+                        existingRows.Add(new ExistingCustomerSnapshot(
+                            reader2.GetInt32(reader2.GetOrdinal("id")),
+                            reader2.GetString(reader2.GetOrdinal("reg_name")),
+                            reader2.IsDBNull(reader2.GetOrdinal("email")) ? null : reader2.GetString(reader2.GetOrdinal("email")),
+                            reader2.IsDBNull(reader2.GetOrdinal("mobile")) ? null : reader2.GetString(reader2.GetOrdinal("mobile"))));
+                    }
+                }
+            }
 
             var rowErrors = new List<string>();
             var staged = new List<(int RowIndex, string RegName, CreateCustomerDto Dto, string EmailNorm, string MobileNorm)>();
@@ -113,34 +156,125 @@ namespace CRM.Server.Services
             if (staged.Count == 0)
                 return fail("No data rows to import (empty sheet?)");
 
-            await using var tx = await context.Database.BeginTransactionAsync();
             try
             {
                 var now = DateTime.UtcNow;
                 var year = now.Year;
-                var reservedCodes = await ReserveCustomerCodesAsync(year, staged.Count);
                 var addedCustomers = new List<Customer>();
-                for (var idx = 0; idx < staged.Count; idx++)
+                using (IDb db = await dbprovider.GetDb())
                 {
-                    var s = staged[idx];
-                    var customer = CustomerFromCreateDto(s.Dto, now, auditUserId);
-                    customer.Code = reservedCodes[idx];
-                    customer.Timelines.Add(new CustomerTimeline
+                    await db.Connect();
+                    await db.BeginTransaction();
+                    try
                     {
-                        Type = 1,
-                        Notes = "Imported via bulk upload",
-                        IsActive = true,
-                        CreatedAt = now,
-                        CreatedBy = auditUserId,
-                        ModifiedAt = now,
-                        ModifiedBy = auditUserId
-                    });
-                    context.Customers.Add(customer);
-                    addedCustomers.Add(customer);
-                }
+                        var reservedCodes = await ReserveCustomerCodesAsync(db, year, staged.Count);
+                        for (var idx = 0; idx < staged.Count; idx++)
+                        {
+                            var s = staged[idx];
+                            var customer = CustomerFromCreateDto(s.Dto, now, auditUserId);
+                            customer.Code = reservedCodes[idx];
 
-                await context.SaveChangesAsync();
-                await tx.CommitAsync();
+                            var insert = db.GetCommand(@"
+INSERT INTO customers (
+    code, reg_name, mobile, email,
+    business_type_id, industry_id, lead_source_id,
+    address_line1, address_line2,
+    city_id, state_id, country_id,
+    pincode, gst_number,
+    contact_persons, emails, mobiles,
+    shop_size_id, tier_id, type_id,
+    is_active, total_locations, total_trade_names,
+    created_at, created_by,
+    converted_at, converted_by,
+    prospect_converted_at, prospect_converted_by,
+    customer_converted_at, customer_converted_by,
+    pipeline_status, product_features_discussed,
+    assigned_representative_id, interaction_mode_id,
+    price_plan_selected, quotation_prepared_sent, quotation_accepted,
+    advance_payment_received, invoice_generated, invoice_number,
+    modified_at, modified_by
+)
+VALUES (
+    @code, @reg_name, @mobile, @email,
+    @business_type_id, @industry_id, @lead_source_id,
+    @address_line1, @address_line2,
+    @city_id, @state_id, @country_id,
+    @pincode, @gst_number,
+    @contact_persons, @emails, @mobiles,
+    @shop_size_id, @tier_id, @type_id,
+    true, NULL, NULL,
+    @created_at, @created_by,
+    NULL, NULL,
+    NULL, NULL,
+    NULL, NULL,
+    NULL, false,
+    NULL, NULL,
+    false, false, false,
+    false, false, NULL,
+    @modified_at, @modified_by
+)
+RETURNING id;");
+                            db.AddParameter(insert, "code", DbTypes.Types.String).Value = customer.Code;
+                            db.AddParameter(insert, "reg_name", DbTypes.Types.String).Value = customer.RegName;
+                            db.AddParameter(insert, "mobile", DbTypes.Types.String).Value = customer.Mobile ?? string.Empty;
+                            db.AddParameter(insert, "email", DbTypes.Types.String).Value = customer.Email ?? string.Empty;
+                            db.AddParameter(insert, "business_type_id", DbTypes.Types.Integer).Value = customer.BusinessTypeId.HasValue ? customer.BusinessTypeId.Value : DBNull.Value;
+                            db.AddParameter(insert, "industry_id", DbTypes.Types.Integer).Value = customer.IndustryId.HasValue ? customer.IndustryId.Value : DBNull.Value;
+                            db.AddParameter(insert, "lead_source_id", DbTypes.Types.Integer).Value = customer.LeadSourceId.HasValue ? customer.LeadSourceId.Value : DBNull.Value;
+                            db.AddParameter(insert, "address_line1", DbTypes.Types.String).Value = customer.AddressLine1 ?? string.Empty;
+                            db.AddParameter(insert, "address_line2", DbTypes.Types.String).Value = customer.AddressLine2 ?? (object)DBNull.Value;
+                            db.AddParameter(insert, "city_id", DbTypes.Types.Integer).Value = customer.CityId.HasValue ? customer.CityId.Value : DBNull.Value;
+                            db.AddParameter(insert, "state_id", DbTypes.Types.Integer).Value = customer.StateId.HasValue ? customer.StateId.Value : DBNull.Value;
+                            db.AddParameter(insert, "country_id", DbTypes.Types.Integer).Value = customer.CountryId.HasValue ? customer.CountryId.Value : DBNull.Value;
+                            db.AddParameter(insert, "pincode", DbTypes.Types.String).Value = customer.Pincode ?? string.Empty;
+                            db.AddParameter(insert, "gst_number", DbTypes.Types.String).Value = customer.GstNumber ?? (object)DBNull.Value;
+                            db.AddParameter(insert, "contact_persons", DbTypes.Types.String).Value = JoinListToCsv(customer.ContactPersons);
+                            db.AddParameter(insert, "emails", DbTypes.Types.String).Value = JoinListToCsv(customer.Emails);
+                            db.AddParameter(insert, "mobiles", DbTypes.Types.String).Value = JoinListToCsv(customer.Mobiles);
+                            db.AddParameter(insert, "shop_size_id", DbTypes.Types.Integer).Value = customer.ShopSizeId;
+                            db.AddParameter(insert, "tier_id", DbTypes.Types.Integer).Value = customer.TierId;
+                            db.AddParameter(insert, "type_id", DbTypes.Types.Integer).Value = customer.TypeId;
+                            db.AddParameter(insert, "created_at", DbTypes.Types.DateTime).Value = now;
+                            db.AddParameter(insert, "created_by", DbTypes.Types.Long).Value = auditUserId;
+                            db.AddParameter(insert, "modified_at", DbTypes.Types.DateTime).Value = now;
+                            db.AddParameter(insert, "modified_by", DbTypes.Types.Long).Value = auditUserId;
+
+                            int newId = 0;
+                            using (DbDataReader rr = await db.Execute(insert))
+                            {
+                                if (await rr.ReadAsync())
+                                    newId = rr.GetInt32(rr.GetOrdinal("id"));
+                            }
+                            customer.Id = newId;
+
+                            var tl = db.GetCommand(@"
+INSERT INTO customer_timelines (
+    customer_id, customer_code, type, notes, file_id, file_name,
+    is_active, created_at, created_by, modified_at, modified_by
+)
+VALUES (
+    @cid, @cc, 1, 'Imported via bulk upload', NULL, NULL,
+    true, @created_at, @created_by, @modified_at, @modified_by
+);");
+                            db.AddParameter(tl, "cid", DbTypes.Types.Integer).Value = newId;
+                            db.AddParameter(tl, "cc", DbTypes.Types.String).Value = customer.Code;
+                            db.AddParameter(tl, "created_at", DbTypes.Types.DateTime).Value = now;
+                            db.AddParameter(tl, "created_by", DbTypes.Types.Long).Value = auditUserId;
+                            db.AddParameter(tl, "modified_at", DbTypes.Types.DateTime).Value = now;
+                            db.AddParameter(tl, "modified_by", DbTypes.Types.Long).Value = auditUserId;
+                            await db.ExecuteNonQuery(tl);
+
+                            addedCustomers.Add(customer);
+                        }
+
+                        await db.CommitTransaction();
+                    }
+                    catch
+                    {
+                        await db.RollbackTransaction();
+                        throw;
+                    }
+                }
 
                 var bulkCreatorNames = await LoadCreatorDisplayNamesAsync(CustomerDisplayUserIdsMany(addedCustomers));
 
@@ -159,7 +293,6 @@ namespace CRM.Server.Services
             }
             catch (Exception ex)
             {
-                await tx.RollbackAsync();
                 return fail(ex.Message);
             }
         }

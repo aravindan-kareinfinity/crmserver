@@ -1,5 +1,6 @@
 using System.Data.Common;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace CRM.Server.Utils
 {
@@ -103,6 +104,7 @@ namespace CRM.Server.Utils
             if (command is not NpgsqlCommand npgCmd)
                 throw new InvalidOperationException("Expected NpgsqlCommand.");
 
+            NormalizeDateTimes(npgCmd);
             return await npgCmd.ExecuteReaderAsync();
         }
 
@@ -111,7 +113,32 @@ namespace CRM.Server.Utils
             if (command is not NpgsqlCommand npgCmd)
                 throw new InvalidOperationException("Expected NpgsqlCommand.");
 
+            NormalizeDateTimes(npgCmd);
             return await npgCmd.ExecuteNonQueryAsync();
+        }
+
+        private static void NormalizeDateTimes(NpgsqlCommand cmd)
+        {
+            foreach (var pObj in cmd.Parameters)
+            {
+                if (pObj is not NpgsqlParameter p || p.Value is null || p.Value is DBNull)
+                    continue;
+
+                // Npgsql (7+) disallows writing Kind=UTC to timestamp without time zone.
+                if (p.NpgsqlDbType == NpgsqlDbType.Timestamp && p.Value is DateTime dt && dt.Kind != DateTimeKind.Unspecified)
+                {
+                    p.Value = DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
+                    continue;
+                }
+
+                // timestamptz requires UTC DateTime (or DateTimeOffset).
+                if (p.NpgsqlDbType == NpgsqlDbType.TimestampTz && p.Value is DateTime dtTz && dtTz.Kind != DateTimeKind.Utc)
+                {
+                    p.Value = dtTz.Kind == DateTimeKind.Unspecified
+                        ? DateTime.SpecifyKind(dtTz, DateTimeKind.Utc)
+                        : dtTz.ToUniversalTime();
+                }
+            }
         }
 
         public void Dispose()

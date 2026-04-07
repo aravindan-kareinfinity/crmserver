@@ -1,7 +1,7 @@
-using CRM.Server.Data;
 using CRM.Server.DTOs;
 using CRM.Server.Models;
-using Microsoft.EntityFrameworkCore;
+using CRM.Server.Utils;
+using System.Data.Common;
 
 namespace CRM.Server.Services
 {
@@ -16,11 +16,11 @@ namespace CRM.Server.Services
 
     public class SchedulerService : ISchedulerService
     {
-        CrmDbContext context;
+        IDbProvider dbprovider;
 
-        public SchedulerService(CrmDbContext context)
+        public SchedulerService(IDbProvider dbprovider)
         {
-            this.context = context;
+            this.dbprovider = dbprovider;
         }
 
         private static bool IsActiveForStatus(string status) =>
@@ -51,8 +51,66 @@ namespace CRM.Server.Services
         {
             try
             {
-                var list = await context.SchedulerEvents.AsNoTracking().OrderByDescending(e => e.StartTime).ToListAsync();
-                return new ApiResponse<List<SchedulerEventResponseDto>> { Success = true, Data = list.Select(Map).ToList() };
+                using (IDb db = await dbprovider.GetDb())
+                {
+                    await db.Connect();
+                    string sql = @"
+SELECT
+    id,
+    title,
+    description,
+    start_time,
+    end_time,
+    attendees,
+    location,
+    type,
+    priority,
+    status,
+    is_active,
+    related_to_type,
+    related_to_id,
+    created_by,
+    created_at,
+    modified_at,
+    modified_by
+FROM scheduler_events
+WHERE is_active = true
+ORDER BY id DESC;";
+                    var cmd = db.GetCommand(sql);
+                    var list = new List<SchedulerEventResponseDto>();
+                    using (DbDataReader reader = await db.Execute(cmd))
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var attendeesCsv = reader.GetString(reader.GetOrdinal("attendees"));
+                            var attendees = string.IsNullOrWhiteSpace(attendeesCsv)
+                                ? new List<int>()
+                                : attendeesCsv.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
+
+                            list.Add(new SchedulerEventResponseDto
+                            {
+                                Id = reader.GetInt32(reader.GetOrdinal("id")),
+                                Title = reader.GetString(reader.GetOrdinal("title")),
+                                Description = reader.GetString(reader.GetOrdinal("description")),
+                                StartTime = reader.GetDateTime(reader.GetOrdinal("start_time")),
+                                EndTime = reader.GetDateTime(reader.GetOrdinal("end_time")),
+                                Attendees = attendees,
+                                Location = reader.IsDBNull(reader.GetOrdinal("location")) ? null : reader.GetString(reader.GetOrdinal("location")),
+                                Type = reader.GetString(reader.GetOrdinal("type")),
+                                Priority = reader.GetString(reader.GetOrdinal("priority")),
+                                Status = reader.GetString(reader.GetOrdinal("status")),
+                                IsActive = reader.GetBoolean(reader.GetOrdinal("is_active")),
+                                RelatedToType = reader.IsDBNull(reader.GetOrdinal("related_to_type")) ? null : reader.GetString(reader.GetOrdinal("related_to_type")),
+                                RelatedToId = reader.IsDBNull(reader.GetOrdinal("related_to_id")) ? null : reader.GetInt32(reader.GetOrdinal("related_to_id")),
+                                CreatedBy = reader.GetInt64(reader.GetOrdinal("created_by")),
+                                CreatedAt = reader.GetDateTime(reader.GetOrdinal("created_at")),
+                                ModifiedAt = reader.GetDateTime(reader.GetOrdinal("modified_at")),
+                                ModifiedBy = reader.IsDBNull(reader.GetOrdinal("modified_by")) ? null : reader.GetInt64(reader.GetOrdinal("modified_by")),
+                            });
+                        }
+                    }
+                    return new ApiResponse<List<SchedulerEventResponseDto>> { Success = true, Data = list };
+                }
             }
             catch (Exception ex)
             {
@@ -64,9 +122,69 @@ namespace CRM.Server.Services
         {
             try
             {
-                var e = await context.SchedulerEvents.FindAsync(id);
-                if (e == null) return new ApiResponse<SchedulerEventResponseDto> { Success = false, Message = "Event not found" };
-                return new ApiResponse<SchedulerEventResponseDto> { Success = true, Data = Map(e) };
+                using (IDb db = await dbprovider.GetDb())
+                {
+                    await db.Connect();
+                    string sql = @"
+SELECT
+    id,
+    title,
+    description,
+    start_time,
+    end_time,
+    attendees,
+    location,
+    type,
+    priority,
+    status,
+    is_active,
+    related_to_type,
+    related_to_id,
+    created_by,
+    created_at,
+    modified_at,
+    modified_by
+FROM scheduler_events
+WHERE id = @id AND is_active = true
+LIMIT 1;";
+                    var cmd = db.GetCommand(sql);
+                    db.AddParameter(cmd, "id", DbTypes.Types.Integer).Value = id;
+                    using (DbDataReader reader = await db.Execute(cmd))
+                    {
+                        if (!await reader.ReadAsync())
+                            return new ApiResponse<SchedulerEventResponseDto> { Success = false, Message = "Event not found" };
+
+                        var attendeesCsv = reader.GetString(reader.GetOrdinal("attendees"));
+                        var attendees = string.IsNullOrWhiteSpace(attendeesCsv)
+                            ? new List<int>()
+                            : attendeesCsv.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
+
+                        return new ApiResponse<SchedulerEventResponseDto>
+                        {
+                            Success = true,
+                            Data = new SchedulerEventResponseDto
+                            {
+                                Id = reader.GetInt32(reader.GetOrdinal("id")),
+                                Title = reader.GetString(reader.GetOrdinal("title")),
+                                Description = reader.GetString(reader.GetOrdinal("description")),
+                                StartTime = reader.GetDateTime(reader.GetOrdinal("start_time")),
+                                EndTime = reader.GetDateTime(reader.GetOrdinal("end_time")),
+                                Attendees = attendees,
+                                Location = reader.IsDBNull(reader.GetOrdinal("location")) ? null : reader.GetString(reader.GetOrdinal("location")),
+                                Type = reader.GetString(reader.GetOrdinal("type")),
+                                Priority = reader.GetString(reader.GetOrdinal("priority")),
+                                Status = reader.GetString(reader.GetOrdinal("status")),
+                                IsActive = reader.GetBoolean(reader.GetOrdinal("is_active")),
+                                RelatedToType = reader.IsDBNull(reader.GetOrdinal("related_to_type")) ? null : reader.GetString(reader.GetOrdinal("related_to_type")),
+                                RelatedToId = reader.IsDBNull(reader.GetOrdinal("related_to_id")) ? null : reader.GetInt32(reader.GetOrdinal("related_to_id")),
+                                CreatedBy = reader.GetInt64(reader.GetOrdinal("created_by")),
+                                CreatedAt = reader.GetDateTime(reader.GetOrdinal("created_at")),
+                                ModifiedAt = reader.GetDateTime(reader.GetOrdinal("modified_at")),
+                                ModifiedBy = reader.IsDBNull(reader.GetOrdinal("modified_by")) ? null : reader.GetInt64(reader.GetOrdinal("modified_by")),
+                            }
+                        };
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -80,28 +198,75 @@ namespace CRM.Server.Services
             {
                 var now = DateTime.UtcNow;
                 var status = string.IsNullOrWhiteSpace(dto.Status) ? "scheduled" : dto.Status.Trim();
-                var e = new SchedulerEvent
+                using (IDb db = await dbprovider.GetDb())
                 {
-                    Title = dto.Title.Trim(),
-                    Description = dto.Description?.Trim() ?? string.Empty,
-                    StartTime = dto.StartTime,
-                    EndTime = dto.EndTime,
-                    Attendees = dto.Attendees ?? new List<int>(),
-                    Location = string.IsNullOrWhiteSpace(dto.Location) ? null : dto.Location.Trim(),
-                    Type = string.IsNullOrWhiteSpace(dto.Type) ? "meeting" : dto.Type.Trim(),
-                    Priority = string.IsNullOrWhiteSpace(dto.Priority) ? "medium" : dto.Priority.Trim(),
-                    Status = status,
-                    IsActive = IsActiveForStatus(status),
-                    RelatedToType = string.IsNullOrWhiteSpace(dto.RelatedToType) ? null : dto.RelatedToType.Trim(),
-                    RelatedToId = dto.RelatedToId,
-                    CreatedBy = AuditUserIds.System,
-                    CreatedAt = now,
-                    ModifiedAt = now,
-                    ModifiedBy = AuditUserIds.System
-                };
-                context.SchedulerEvents.Add(e);
-                await context.SaveChangesAsync();
-                return new ApiResponse<SchedulerEventResponseDto> { Success = true, Data = Map(e) };
+                    await db.Connect();
+                    var attendeesCsv = string.Join(",", dto.Attendees ?? new List<int>());
+
+                    string sql = @"
+INSERT INTO scheduler_events (
+    title,
+    description,
+    start_time,
+    end_time,
+    attendees,
+    location,
+    type,
+    priority,
+    status,
+    is_active,
+    related_to_type,
+    related_to_id,
+    created_by,
+    created_at,
+    modified_at,
+    modified_by
+)
+VALUES (
+    @title,
+    @description,
+    @start_time,
+    @end_time,
+    @attendees,
+    @location,
+    @type,
+    @priority,
+    @status,
+    @is_active,
+    @related_to_type,
+    @related_to_id,
+    @created_by,
+    @created_at,
+    @modified_at,
+    @modified_by
+)
+RETURNING id;";
+                    var cmd = db.GetCommand(sql);
+                    db.AddParameter(cmd, "title", DbTypes.Types.String).Value = dto.Title.Trim();
+                    db.AddParameter(cmd, "description", DbTypes.Types.String).Value = dto.Description?.Trim() ?? string.Empty;
+                    db.AddParameter(cmd, "start_time", DbTypes.Types.DateTime).Value = dto.StartTime;
+                    db.AddParameter(cmd, "end_time", DbTypes.Types.DateTime).Value = dto.EndTime;
+                    db.AddParameter(cmd, "attendees", DbTypes.Types.String).Value = attendeesCsv;
+                    db.AddParameter(cmd, "location", DbTypes.Types.String).Value = string.IsNullOrWhiteSpace(dto.Location) ? (object)DBNull.Value : dto.Location.Trim();
+                    db.AddParameter(cmd, "type", DbTypes.Types.String).Value = string.IsNullOrWhiteSpace(dto.Type) ? "meeting" : dto.Type.Trim();
+                    db.AddParameter(cmd, "priority", DbTypes.Types.String).Value = string.IsNullOrWhiteSpace(dto.Priority) ? "medium" : dto.Priority.Trim();
+                    db.AddParameter(cmd, "status", DbTypes.Types.String).Value = status;
+                    db.AddParameter(cmd, "is_active", DbTypes.Types.Boolean).Value = IsActiveForStatus(status);
+                    db.AddParameter(cmd, "related_to_type", DbTypes.Types.String).Value = string.IsNullOrWhiteSpace(dto.RelatedToType) ? (object)DBNull.Value : dto.RelatedToType.Trim();
+                    db.AddParameter(cmd, "related_to_id", DbTypes.Types.Integer).Value = dto.RelatedToId.HasValue ? dto.RelatedToId.Value : DBNull.Value;
+                    db.AddParameter(cmd, "created_by", DbTypes.Types.Long).Value = AuditUserIds.System;
+                    db.AddParameter(cmd, "created_at", DbTypes.Types.DateTime).Value = now;
+                    db.AddParameter(cmd, "modified_at", DbTypes.Types.DateTime).Value = now;
+                    db.AddParameter(cmd, "modified_by", DbTypes.Types.Long).Value = AuditUserIds.System;
+
+                    int newId = 0;
+                    using (DbDataReader reader = await db.Execute(cmd))
+                    {
+                        if (await reader.ReadAsync())
+                            newId = reader.GetInt32(reader.GetOrdinal("id"));
+                    }
+                    return await GetById(newId);
+                }
             }
             catch (Exception ex)
             {
@@ -113,25 +278,57 @@ namespace CRM.Server.Services
         {
             try
             {
-                var e = await context.SchedulerEvents.FindAsync(id);
-                if (e == null) return new ApiResponse<SchedulerEventResponseDto> { Success = false, Message = "Event not found" };
                 var status = string.IsNullOrWhiteSpace(dto.Status) ? "scheduled" : dto.Status.Trim();
-                e.Title = dto.Title.Trim();
-                e.Description = dto.Description?.Trim() ?? string.Empty;
-                e.StartTime = dto.StartTime;
-                e.EndTime = dto.EndTime;
-                e.Attendees = dto.Attendees ?? new List<int>();
-                e.Location = string.IsNullOrWhiteSpace(dto.Location) ? null : dto.Location.Trim();
-                e.Type = string.IsNullOrWhiteSpace(dto.Type) ? "meeting" : dto.Type.Trim();
-                e.Priority = string.IsNullOrWhiteSpace(dto.Priority) ? "medium" : dto.Priority.Trim();
-                e.Status = status;
-                e.IsActive = IsActiveForStatus(status);
-                e.RelatedToType = string.IsNullOrWhiteSpace(dto.RelatedToType) ? null : dto.RelatedToType.Trim();
-                e.RelatedToId = dto.RelatedToId;
-                e.ModifiedAt = DateTime.UtcNow;
-                e.ModifiedBy = AuditUserIds.System;
-                await context.SaveChangesAsync();
-                return new ApiResponse<SchedulerEventResponseDto> { Success = true, Data = Map(e) };
+                using (IDb db = await dbprovider.GetDb())
+                {
+                    await db.Connect();
+                    var now = DateTime.UtcNow;
+                    var attendeesCsv = string.Join(",", dto.Attendees ?? new List<int>());
+
+                    string sql = @"
+UPDATE scheduler_events
+SET
+    title = @title,
+    description = @description,
+    start_time = @start_time,
+    end_time = @end_time,
+    attendees = @attendees,
+    location = @location,
+    type = @type,
+    priority = @priority,
+    status = @status,
+    is_active = @is_active,
+    related_to_type = @related_to_type,
+    related_to_id = @related_to_id,
+    modified_at = @modified_at,
+    modified_by = @modified_by
+WHERE id = @id
+RETURNING id;";
+
+                    var cmd = db.GetCommand(sql);
+                    db.AddParameter(cmd, "id", DbTypes.Types.Integer).Value = id;
+                    db.AddParameter(cmd, "title", DbTypes.Types.String).Value = dto.Title.Trim();
+                    db.AddParameter(cmd, "description", DbTypes.Types.String).Value = dto.Description?.Trim() ?? string.Empty;
+                    db.AddParameter(cmd, "start_time", DbTypes.Types.DateTime).Value = dto.StartTime;
+                    db.AddParameter(cmd, "end_time", DbTypes.Types.DateTime).Value = dto.EndTime;
+                    db.AddParameter(cmd, "attendees", DbTypes.Types.String).Value = attendeesCsv;
+                    db.AddParameter(cmd, "location", DbTypes.Types.String).Value = string.IsNullOrWhiteSpace(dto.Location) ? (object)DBNull.Value : dto.Location.Trim();
+                    db.AddParameter(cmd, "type", DbTypes.Types.String).Value = string.IsNullOrWhiteSpace(dto.Type) ? "meeting" : dto.Type.Trim();
+                    db.AddParameter(cmd, "priority", DbTypes.Types.String).Value = string.IsNullOrWhiteSpace(dto.Priority) ? "medium" : dto.Priority.Trim();
+                    db.AddParameter(cmd, "status", DbTypes.Types.String).Value = status;
+                    db.AddParameter(cmd, "is_active", DbTypes.Types.Boolean).Value = IsActiveForStatus(status);
+                    db.AddParameter(cmd, "related_to_type", DbTypes.Types.String).Value = string.IsNullOrWhiteSpace(dto.RelatedToType) ? (object)DBNull.Value : dto.RelatedToType.Trim();
+                    db.AddParameter(cmd, "related_to_id", DbTypes.Types.Integer).Value = dto.RelatedToId.HasValue ? dto.RelatedToId.Value : DBNull.Value;
+                    db.AddParameter(cmd, "modified_at", DbTypes.Types.DateTime).Value = now;
+                    db.AddParameter(cmd, "modified_by", DbTypes.Types.Long).Value = AuditUserIds.System;
+
+                    using (DbDataReader reader = await db.Execute(cmd))
+                    {
+                        if (!await reader.ReadAsync())
+                            return new ApiResponse<SchedulerEventResponseDto> { Success = false, Message = "Event not found" };
+                    }
+                    return await GetById(id);
+                }
             }
             catch (Exception ex)
             {
@@ -143,11 +340,23 @@ namespace CRM.Server.Services
         {
             try
             {
-                var e = await context.SchedulerEvents.FindAsync(id);
-                if (e == null) return new ApiResponse<bool> { Success = false, Message = "Event not found" };
-                context.SchedulerEvents.Remove(e);
-                await context.SaveChangesAsync();
-                return new ApiResponse<bool> { Success = true, Data = true };
+                using (IDb db = await dbprovider.GetDb())
+                {
+                    await db.Connect();
+                    string sql = @"
+UPDATE scheduler_events
+SET is_active=false
+WHERE id=@id
+RETURNING id;";
+                    var cmd = db.GetCommand(sql);
+                    db.AddParameter(cmd, "id", DbTypes.Types.Integer).Value = id;
+                    using (DbDataReader reader = await db.Execute(cmd))
+                    {
+                        if (!await reader.ReadAsync())
+                            return new ApiResponse<bool> { Success = false, Message = "Event not found" };
+                    }
+                    return new ApiResponse<bool> { Success = true, Data = true };
+                }
             }
             catch (Exception ex)
             {

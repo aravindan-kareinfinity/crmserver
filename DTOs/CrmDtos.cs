@@ -318,6 +318,7 @@ namespace CRM.Server.DTOs
     {
         public int Id { get; set; }
         public int InvoiceId { get; set; }
+        public int CustomerId { get; set; }
         public string CustomerCode { get; set; } = string.Empty;
         public decimal Amount { get; set; }
         public decimal Remaining { get; set; }
@@ -345,27 +346,31 @@ namespace CRM.Server.DTOs
         public string Description { get; set; } = string.Empty;
         public string? ContactPerson { get; set; }
         public string? ContactMobile { get; set; }
+        /// <summary>Ticket status reference id (reference_entries, category: "Ticket Status").</summary>
+        public int? StatusId { get; set; }
         public string Priority { get; set; } = "medium";
         public int AssignedTo { get; set; }
-        public string Category { get; set; } = string.Empty;
-        public string? Module { get; set; }
+        public int CategoryId { get; set; }
+        public int? ModuleId { get; set; }
         /// <summary>User id for ticket timeline attribution (optional).</summary>
         public int? ChangedByUserId { get; set; }
     }
 
     public class UpdateTicketDto
     {
-        public string? Status { get; set; }
+        public int? StatusId { get; set; }
         public string? Priority { get; set; }
         public int? AssignedTo { get; set; }
         public int? CustomerId { get; set; }
         public string? CustomerCode { get; set; }
         public int? LocationId { get; set; }
         public string? LocationCode { get; set; }
+        public string? ContactPerson { get; set; }
+        public string? ContactMobile { get; set; }
         public string? Subject { get; set; }
         public string? Description { get; set; }
-        public string? Category { get; set; }
-        public string? Module { get; set; }
+        public int? CategoryId { get; set; }
+        public int? ModuleId { get; set; }
         public bool? IsActive { get; set; }
         /// <summary>User id for ticket timeline attribution (optional).</summary>
         public int? ChangedByUserId { get; set; }
@@ -383,7 +388,7 @@ namespace CRM.Server.DTOs
         public string Description { get; set; } = string.Empty;
         public string? ContactPerson { get; set; }
         public string? ContactMobile { get; set; }
-        public string Status { get; set; } = string.Empty;
+        public int StatusId { get; set; }
         public string Priority { get; set; } = string.Empty;
         public int AssignedTo { get; set; }
         public bool IsActive { get; set; }
@@ -393,8 +398,8 @@ namespace CRM.Server.DTOs
         public long? ModifiedBy { get; set; }
         public DateTime? ClosedAt { get; set; }
         public long? ClosedBy { get; set; }
-        public string Category { get; set; } = string.Empty;
-        public string? Module { get; set; }
+        public int CategoryId { get; set; }
+        public int? ModuleId { get; set; }
     }
 
     // ========== Location DTOs (PostgreSQL: locations) ==========
@@ -418,6 +423,7 @@ namespace CRM.Server.DTOs
         public int TierId { get; set; }
         public bool IsPrimary { get; set; }
         public string GstNumber { get; set; } = string.Empty;
+        public bool? IsEnabled { get; set; }
     }
 
     /// <summary>Aligned with core-crm-suite <c>Location</c>.</summary>
@@ -442,6 +448,7 @@ namespace CRM.Server.DTOs
         public int TierId { get; set; }
         public bool IsPrimary { get; set; }
         public string GstNumber { get; set; } = string.Empty;
+        public bool IsEnabled { get; set; }
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
         public long? CreatedBy { get; set; }
@@ -705,6 +712,7 @@ namespace CRM.Server.DTOs
         public DateTime? RegistrationDate { get; set; }
         public DateTime? ExpiryDate { get; set; }
         public bool IsActive { get; set; } = true;
+        public bool? IsEnabled { get; set; }
         public string? Remarks { get; set; }
     }
 
@@ -733,6 +741,7 @@ namespace CRM.Server.DTOs
         public DateTime? RegistrationDate { get; set; }
         public DateTime? ExpiryDate { get; set; }
         public bool IsActive { get; set; }
+        public bool? IsEnabled { get; set; }
         public string? Remarks { get; set; }
     }
 
@@ -761,6 +770,7 @@ namespace CRM.Server.DTOs
         public string? Description { get; set; }
         public DateTime? RegistrationDate { get; set; }
         public DateTime? ExpiryDate { get; set; }
+        public bool IsEnabled { get; set; }
         public bool IsActive { get; set; }
         public string? Remarks { get; set; }
         public DateTime CreatedAt { get; set; }
@@ -956,7 +966,7 @@ namespace CRM.Server.DTOs
         public string StartDate { get; set; } = string.Empty;
         /// <summary>UTC date (yyyy-MM-dd); end of day used.</summary>
         public string EndDate { get; set; } = string.Empty;
-        /// <summary>When set, replaces trailing <c>ORDER BY ...</c> with <c>ORDER BY c.created_at ASC|DESC</c> (queries must use alias <c>c</c> for customers).</summary>
+        /// <summary>When set, replaces trailing <c>ORDER BY ...</c> with <c>ORDER BY c.id ASC|DESC</c> (queries must use alias <c>c</c> for customers).</summary>
         public string? OrderCreatedAt { get; set; }
     }
 

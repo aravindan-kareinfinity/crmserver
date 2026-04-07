@@ -30,11 +30,19 @@ namespace CRM.Server.Controllers
 
         /// <summary>UI <c>customerService.getAll()</c> — full list, no pagination.</summary>
         [HttpGet("all")]
-        public async Task<ActionResult<ApiResponse<List<CustomerResponseDto>>>> GetAllList()
+        public async Task<ActionResult<ApiResponse<List<CustomerResponseDto>>>> GetAllList([FromQuery] string? searchTerm = null)
         {
-            var result = await customerService.GetAllCustomersList();
-            if (!result.Success) return BadRequest(result);
-            return Ok(result);
+            if (string.IsNullOrWhiteSpace(searchTerm))
+            {
+                var result = await customerService.GetAllCustomersList();
+                if (!result.Success) return BadRequest(result);
+                return Ok(result);
+            }
+
+            // Support lightweight server-side search for UI dropdowns.
+            var paged = await customerService.GetAllCustomers(pageNumber: 1, pageSize: 5000, searchTerm: searchTerm);
+            if (!paged.Success || paged.Data == null) return BadRequest(paged.Success ? new ApiResponse<List<CustomerResponseDto>> { Success = false, Message = "Search failed" } : new ApiResponse<List<CustomerResponseDto>> { Success = false, Message = paged.Message });
+            return Ok(new ApiResponse<List<CustomerResponseDto>> { Success = true, Data = paged.Data.Items });
         }
 
         [HttpGet("{id:int}")]

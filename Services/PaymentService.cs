@@ -30,6 +30,7 @@ namespace CRM.Server.Services
         {
             Id = p.Id,
             InvoiceId = p.InvoiceId,
+            CustomerId = p.Customer?.Id ?? p.CustomerId,
             CustomerCode = p.CustomerCode,
             Amount = p.Amount,
             Remaining = p.Remaining,
@@ -86,6 +87,7 @@ namespace CRM.Server.Services
 SELECT
     id,
     invoice_id,
+    customer_id,
     customer_code,
     amount,
     remaining,
@@ -110,6 +112,7 @@ FROM payments";
                             {
                                 Id = reader.GetInt32(reader.GetOrdinal("id")),
                                 InvoiceId = reader.GetInt32(reader.GetOrdinal("invoice_id")),
+                                CustomerId = reader.GetInt32(reader.GetOrdinal("customer_id")),
                                 CustomerCode = reader.GetString(reader.GetOrdinal("customer_code")),
                                 Amount = reader.GetDecimal(reader.GetOrdinal("amount")),
                                 Remaining = reader.GetDecimal(reader.GetOrdinal("remaining")),
@@ -178,8 +181,9 @@ FROM payments";
 SELECT
     i.id,
     i.invoice_number,
+    i.customer_id,
     i.customer_code,
-    c.id as customer_id,
+    c.id as join_customer_id,
     i.service_id,
     i.staff_id,
     i.payment_mode_id,
@@ -212,14 +216,16 @@ LIMIT 1;";
                             return new ApiResponse<CollectPaymentResultDto> { Success = false, Message = "Invoice not found" };
                         }
 
+                        var invCustId = invReader.GetInt32(invReader.GetOrdinal("customer_id"));
                         inv = new Invoice
                         {
                             Id = invReader.GetInt32(invReader.GetOrdinal("id")),
                             InvoiceNumber = invReader.GetString(invReader.GetOrdinal("invoice_number")),
+                            CustomerId = invCustId,
                             CustomerCode = invReader.GetString(invReader.GetOrdinal("customer_code")),
                             Customer = new Customer
                             {
-                                Id = invReader.IsDBNull(invReader.GetOrdinal("customer_id")) ? 0 : invReader.GetInt32(invReader.GetOrdinal("customer_id"))
+                                Id = invCustId > 0 ? invCustId : (invReader.IsDBNull(invReader.GetOrdinal("join_customer_id")) ? 0 : invReader.GetInt32(invReader.GetOrdinal("join_customer_id")))
                             },
                             ServiceId = invReader.GetInt32(invReader.GetOrdinal("service_id")),
                             StaffId = invReader.IsDBNull(invReader.GetOrdinal("staff_id")) ? null : invReader.GetInt32(invReader.GetOrdinal("staff_id")),
@@ -333,6 +339,7 @@ WHERE id = @invoice_id;";
                     var payment = new Payment
                     {
                         InvoiceId = inv.Id,
+                        CustomerId = inv.Customer?.Id ?? inv.CustomerId,
                         CustomerCode = inv.CustomerCode,
                         Amount = dto.Amount,
                         Remaining = remaining,
@@ -349,6 +356,7 @@ WHERE id = @invoice_id;";
                     string insertPaymentSql = @"
 INSERT INTO payments (
     invoice_id,
+    customer_id,
     customer_code,
     amount,
     remaining,
@@ -363,6 +371,7 @@ INSERT INTO payments (
 )
 VALUES (
     @invoice_id,
+    @customer_id,
     @customer_code,
     @amount,
     @remaining,
@@ -379,6 +388,7 @@ RETURNING id;";
 
                     var insertPaymentCmd = db.GetCommand(insertPaymentSql);
                     db.AddParameter(insertPaymentCmd, "invoice_id", DbTypes.Types.Integer).Value = payment.InvoiceId;
+                    db.AddParameter(insertPaymentCmd, "customer_id", DbTypes.Types.Integer).Value = payment.CustomerId;
                     db.AddParameter(insertPaymentCmd, "customer_code", DbTypes.Types.String).Value = payment.CustomerCode;
                     db.AddParameter(insertPaymentCmd, "amount", DbTypes.Types.Decimal).Value = payment.Amount;
                     db.AddParameter(insertPaymentCmd, "remaining", DbTypes.Types.Decimal).Value = payment.Remaining;
@@ -529,6 +539,7 @@ SELECT EXISTS (
                                         string insertInvoiceSql = @"
 INSERT INTO invoices (
     invoice_number,
+    customer_id,
     customer_code,
     service_id,
     staff_id,
@@ -546,6 +557,7 @@ INSERT INTO invoices (
 )
 VALUES (
     @invoice_number,
+    @customer_id,
     @customer_code,
     @service_id,
     @staff_id,
@@ -565,6 +577,7 @@ RETURNING id;";
 
                                         var insertInvCmd = db.GetCommand(insertInvoiceSql);
                                         db.AddParameter(insertInvCmd, "invoice_number", DbTypes.Types.String).Value = newInvoiceNumber;
+                                        db.AddParameter(insertInvCmd, "customer_id", DbTypes.Types.Integer).Value = inv.Customer?.Id ?? inv.CustomerId;
                                         db.AddParameter(insertInvCmd, "customer_code", DbTypes.Types.String).Value = inv.CustomerCode;
                                         db.AddParameter(insertInvCmd, "service_id", DbTypes.Types.Integer).Value = serviceId;
                                         db.AddParameter(insertInvCmd, "staff_id", DbTypes.Types.Integer).Value = inv.StaffId.HasValue ? inv.StaffId.Value : DBNull.Value;

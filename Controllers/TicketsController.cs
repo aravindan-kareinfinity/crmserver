@@ -27,9 +27,9 @@ namespace CRM.Server.Controllers
         }
 
         [HttpGet("all")]
-        public async Task<ActionResult<ApiResponse<List<TicketResponseDto>>>> GetAll()
+        public async Task<ActionResult<ApiResponse<List<TicketResponseDto>>>> GetAll([FromQuery] TicketQueryDto q)
         {
-            var result = await ticketService.GetAll();
+            var result = await ticketService.GetAll(q);
             if (!result.Success) return BadRequest(result);
             return Ok(result);
         }

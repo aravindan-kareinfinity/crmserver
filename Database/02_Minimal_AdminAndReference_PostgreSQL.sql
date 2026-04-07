@@ -7,8 +7,8 @@
 -- BCrypt hash: password (BCrypt.Net-Next).
 
 -- Safe to re-run: skips rows that already exist (unique on roles.name, users.user_id / users.email).
-INSERT INTO roles (name, description, permissions, user_count) VALUES
-    ('Admin', 'Full system access', 'all', 1)
+INSERT INTO roles (name, description, permissions, user_count, is_active) VALUES
+    ('Admin', 'Full system access', 'all', 1, true)
 ON CONFLICT (name) DO NOTHING;
 
 INSERT INTO users (

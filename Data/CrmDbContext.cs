@@ -35,10 +35,7 @@ namespace CRM.Server.Data
         {
             base.OnModelCreating(modelBuilder);
 
-            // PostgreSQL enum column types (NpgsqlDataSource must MapEnum for these)
-            modelBuilder.Entity<Ticket>()
-                .Property(t => t.Status)
-                .HasColumnType("ticket_status");
+            // Ticket.StatusId is a FK to reference_entries (Ticket Status).
             modelBuilder.Entity<Ticket>()
                 .Property(t => t.Priority)
                 .HasColumnType("ticket_priority");
@@ -94,15 +91,13 @@ namespace CRM.Server.Data
             modelBuilder.Entity<CustomerTimeline>()
                 .HasOne(ct => ct.Customer)
                 .WithMany(c => c.Timelines)
-                .HasForeignKey(ct => ct.CustomerCode)
-                .HasPrincipalKey(c => c.Code)
+                .HasForeignKey(ct => ct.CustomerId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<Service>()
                 .HasOne(s => s.Customer)
                 .WithMany(c => c.Services)
-                .HasForeignKey(s => s.CustomerCode)
-                .HasPrincipalKey(c => c.Code)
+                .HasForeignKey(s => s.CustomerId)
                 .OnDelete(DeleteBehavior.Cascade);
             modelBuilder.Entity<Service>()
                 .Property(s => s.ImplementationStatus)
@@ -113,8 +108,7 @@ namespace CRM.Server.Data
             modelBuilder.Entity<Invoice>()
                 .HasOne(i => i.Customer)
                 .WithMany(c => c.Invoices)
-                .HasForeignKey(i => i.CustomerCode)
-                .HasPrincipalKey(c => c.Code)
+                .HasForeignKey(i => i.CustomerId)
                 .OnDelete(DeleteBehavior.Cascade);
             modelBuilder.Entity<Invoice>()
                 .HasOne(i => i.Service)
@@ -137,13 +131,16 @@ namespace CRM.Server.Data
                     .WithMany(i => i.Payments)
                     .HasForeignKey(p => p.InvoiceId)
                     .OnDelete(DeleteBehavior.Cascade);
+                e.HasOne(p => p.Customer)
+                    .WithMany(c => c.Payments)
+                    .HasForeignKey(p => p.CustomerId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<Investment>()
                 .HasOne(inv => inv.Customer)
                 .WithMany(c => c.Investments)
-                .HasForeignKey(inv => inv.CustomerCode)
-                .HasPrincipalKey(c => c.Code)
+                .HasForeignKey(inv => inv.CustomerId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<InvestmentTimeline>()
@@ -184,8 +181,7 @@ namespace CRM.Server.Data
             {
                 e.HasOne(t => t.Customer)
                     .WithMany(c => c.Tickets)
-                    .HasForeignKey(t => t.CustomerCode)
-                    .HasPrincipalKey(c => c.Code)
+                    .HasForeignKey(t => t.CustomerId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
@@ -213,8 +209,7 @@ namespace CRM.Server.Data
             modelBuilder.Entity<Trademark>()
                 .HasOne(t => t.Customer)
                 .WithMany(c => c.Trademarks)
-                .HasForeignKey(t => t.CustomerCode)
-                .HasPrincipalKey(c => c.Code)
+                .HasForeignKey(t => t.CustomerId)
                 .OnDelete(DeleteBehavior.Cascade);
             modelBuilder.Entity<Trademark>()
                 .HasOne(t => t.Location)
@@ -242,8 +237,7 @@ namespace CRM.Server.Data
             modelBuilder.Entity<Location>()
                 .HasOne(b => b.Customer)
                 .WithMany(c => c.Locations)
-                .HasForeignKey(b => b.CustomerCode)
-                .HasPrincipalKey(c => c.Code)
+                .HasForeignKey(b => b.CustomerId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<LocationTimeline>()

@@ -55,7 +55,7 @@ namespace CRM.Server.Services
             using (IDb db = await dbprovider.GetDb())
             {
                 await db.Connect();
-                string sql = @"SELECT name, permissions FROM roles ORDER BY name;";
+                string sql = @"SELECT name, permissions FROM roles WHERE is_active = true ORDER BY id DESC;";
                 var command = db.GetCommand(sql);
                 using (DbDataReader reader = await db.Execute(command))
                 {
@@ -148,6 +148,7 @@ SELECT
     modified_by
 FROM users
 WHERE lower(email) = @email
+  AND is_active = true
 LIMIT 1;";
 
                     var cmd = db.GetCommand(sql);
@@ -248,7 +249,8 @@ SELECT
     modified_at,
     modified_by
 FROM users
-ORDER BY created_at DESC;";
+WHERE is_active = true
+ORDER BY id DESC;";
 
                     var cmd = db.GetCommand(sql);
                     using (DbDataReader reader = await db.Execute(cmd))
@@ -441,7 +443,7 @@ SELECT
     modified_by
 FROM users
 WHERE is_active = @active
-ORDER BY created_at DESC;";
+ORDER BY id DESC;";
 
                     var cmd = db.GetCommand(sql);
                     db.AddParameter(cmd, "active", DbTypes.Types.Boolean).Value = active;
@@ -798,10 +800,21 @@ RETURNING
                     if (!exists)
                         return new ApiResponse<bool> { Success = false, Message = "User not found" };
 
-                    string deleteSql = @"DELETE FROM users WHERE id=@id;";
-                    var deleteCmd = db.GetCommand(deleteSql);
-                    db.AddParameter(deleteCmd, "id", DbTypes.Types.Integer).Value = id;
-                    await db.ExecuteNonQuery(deleteCmd);
+                    var cmd = db.GetCommand(@"
+UPDATE users
+SET is_active=false,
+    modified_at=@modified_at,
+    modified_by=@modified_by
+WHERE id=@id
+RETURNING id;");
+                    db.AddParameter(cmd, "id", DbTypes.Types.Integer).Value = id;
+                    db.AddParameter(cmd, "modified_at", DbTypes.Types.DateTime).Value = DateTime.UtcNow;
+                    db.AddParameter(cmd, "modified_by", DbTypes.Types.Long).Value = AuditUserIds.System;
+                    using (DbDataReader r = await db.Execute(cmd))
+                    {
+                        if (!await r.ReadAsync())
+                            return new ApiResponse<bool> { Success = false, Message = "User not found" };
+                    }
 
                     return new ApiResponse<bool> { Success = true, Data = true };
                 }

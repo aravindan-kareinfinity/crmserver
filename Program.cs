@@ -32,7 +32,6 @@ var connectionString = builder.Configuration.GetConnectionString("PostgreSQL")
     ?? "Host=localhost;Port=5432;Database=crm;Username=postgres;Password=abc123";
 
 var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
-dataSourceBuilder.MapEnum<TicketStatus>("ticket_status");
 dataSourceBuilder.MapEnum<TicketPriority>("ticket_priority");
 dataSourceBuilder.MapEnum<ImplementationWorkflowStatus>("implementation_status_enum");
 var npgsqlDataSource = dataSourceBuilder.Build();

@@ -61,7 +61,7 @@ SELECT
     requires_implementation,
     is_implementation
 FROM reference_entries
-ORDER BY category, sort_order;";
+ORDER BY id DESC;";
 
                     var command = db.GetCommand(sql);
                     var list = new List<ReferenceResponseDto>();
@@ -497,7 +497,11 @@ RETURNING
                 {
                     await db.Connect();
 
-                    string sql = @"DELETE FROM reference_entries WHERE id=@id RETURNING id;";
+                    string sql = @"
+UPDATE reference_entries
+SET is_active=false
+WHERE id=@id
+RETURNING id;";
                     var command = db.GetCommand(sql);
                     db.AddParameter(command, "id", DbTypes.Types.Integer).Value = id;
 

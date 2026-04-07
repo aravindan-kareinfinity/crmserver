@@ -27,9 +27,9 @@ namespace CRM.Server.Controllers
         }
 
         [HttpGet("all")]
-        public async Task<ActionResult<ApiResponse<List<ServiceResponseDto>>>> GetAllServicesList()
+        public async Task<ActionResult<ApiResponse<List<ServiceResponseDto>>>> GetAllServicesList([FromQuery] ServiceQueryDto q)
         {
-            var result = await serviceService.GetAllServicesList();
+            var result = await serviceService.GetAllServicesList(q);
             if (!result.Success)
                 return BadRequest(result);
             return Ok(result);

@@ -78,8 +78,10 @@ INSERT INTO reference_entries (category, label, value, is_active, sort_order) VA
 
 INSERT INTO reference_entries (category, label, value, is_active, sort_order) VALUES
 ('Frequency', 'Monthly', 'monthly', true, 1),
-('Frequency', 'Yearly', 'yearly', true, 2),
-('Frequency', 'One-Time', 'one_time', true, 3);
+('Frequency', 'Quarterly', 'quarterly', true, 2),
+('Frequency', 'Half-Yearly', 'half_yearly', true, 3),
+('Frequency', 'Yearly', 'yearly', true, 4),
+('Frequency', 'One-Time', 'one_time', true, 5);
 
 INSERT INTO reference_entries (category, label, value, is_active, sort_order) VALUES
 ('Payment Frequency', 'Yearly', 'YEARLY', true, 1),

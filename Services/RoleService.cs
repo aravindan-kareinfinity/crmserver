@@ -66,7 +66,8 @@ namespace CRM.Server.Services
                     await db.Connect();
                     string sql = @"SELECT id, name, description, permissions, created_at, created_by, modified_at, modified_by
 FROM roles
-ORDER BY name;";
+WHERE is_active = true
+ORDER BY id DESC;";
                     var command = db.GetCommand(sql);
                     var roles = new List<Role>();
                     using (DbDataReader reader = await db.Execute(command))
@@ -112,7 +113,7 @@ ORDER BY name;";
                     await db.Connect();
                     string sql = @"SELECT id, name, description, permissions, created_at, created_by, modified_at, modified_by
 FROM roles
-WHERE id = @id
+WHERE id = @id AND is_active = true
 LIMIT 1;";
                     var command = db.GetCommand(sql);
                     db.AddParameter(command, "id", DbTypes.Types.Integer).Value = id;
@@ -288,7 +289,7 @@ LIMIT 1;";
 
                     if (!string.Equals(oldName, newName, StringComparison.Ordinal))
                     {
-                        string takenSql = @"SELECT 1 FROM roles WHERE name = @name AND id <> @id LIMIT 1;";
+                        string takenSql = @"SELECT 1 FROM roles WHERE name = @name AND id <> @id AND is_active=true LIMIT 1;";
                         var takenCmd = db.GetCommand(takenSql);
                         db.AddParameter(takenCmd, "name", DbTypes.Types.String).Value = newName;
                         db.AddParameter(takenCmd, "id", DbTypes.Types.Integer).Value = id;
@@ -403,10 +404,21 @@ RETURNING id, name, description, permissions, created_at, created_by, modified_a
                             Message = $"Cannot delete role assigned to {assigned} user(s). Reassign users first."
                         };
 
-                    string deleteSql = @"DELETE FROM roles WHERE id = @id;";
-                    var deleteCmd = db.GetCommand(deleteSql);
-                    db.AddParameter(deleteCmd, "id", DbTypes.Types.Integer).Value = id;
-                    await db.ExecuteNonQuery(deleteCmd);
+                    var cmd = db.GetCommand(@"
+UPDATE roles
+SET is_active=false,
+    modified_at=@modified_at,
+    modified_by=@modified_by
+WHERE id=@id
+RETURNING id;");
+                    db.AddParameter(cmd, "id", DbTypes.Types.Integer).Value = id;
+                    db.AddParameter(cmd, "modified_at", DbTypes.Types.DateTime).Value = DateTime.UtcNow;
+                    db.AddParameter(cmd, "modified_by", DbTypes.Types.Long).Value = AuditUserIds.System;
+                    using (DbDataReader r = await db.Execute(cmd))
+                    {
+                        if (!await r.ReadAsync())
+                            return new ApiResponse<bool> { Success = false, Message = "Role not found" };
+                    }
 
                     return new ApiResponse<bool> { Success = true, Data = true };
                 }
